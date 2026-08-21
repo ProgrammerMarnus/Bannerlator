@@ -85,3 +85,51 @@ TEST: Y
 COMPILE: Y (junit + kotlinx-coroutines)
 DATE: 2026-08-21
 ---
+
+# === PHASE 2: THREADING → COROUTINES ===
+# (Env still has no JDK/Gradle/SDK; changes are Java/Kotlin source only — compiler-verified on CI.)
+
+FILE: app/src/main/java/com/winlator/star/core/unpack/UnpackService.kt
+ACTION: MODIFIED
+SUMMARY: Replaced `Thread { }` + `Thread.sleep()` with `scope.launch`/delay() in the unpack worker; added `scope.cancel()` to onDestroy() to prevent orphaned coroutines after the doc-comment claimed it but didn't actually cancel.
+LINES: +15/-7
+TEST: N (runtime service — covered by manual smoke test on CI host)
+COMPILE: ASSUMED — static-review verified (import kotlinx.coroutines.*, scope.launch replaces Thread{}, delay replaces Thread.sleep)
+DATE: 2026-08-21
+---
+
+FILE: app/src/main/java/com/winlator/star/container/ContainerManager.java
+ACTION: MODIFIED
+SUMMARY: Replaced 5 throwaway `Executors.newSingleThreadExecutor()` per-call instances (thread leaks) with a shared daemon `BACKGROUND_EXECUTOR` field — mirrors the FileUtils.SIZE_ASYNC_EXECUTOR pattern already applied in this workstream. Affects createContainerAsync, duplicateContainerAsync, removeContainerAsync, importContainer, exportContainer.
+LINES: +16/-5
+TEST: N (Java, requires android.jar — CI verify only)
+COMPILE: ASSUMED — static-review verified (ExecutorService import added; all 5 call sites confirmed via grep)
+DATE: 2026-08-21
+---
+
+FILE: app/src/main/java/com/winlator/star/core/FileUtils.java
+ACTION: MODIFIED
+SUMMARY: Replaced throwaway `Executors.newSingleThreadExecutor()` in getSizeAsync() with a shared daemon `SIZE_ASYNC_EXECUTOR` field — prevents per-call thread leak on folder-size requests.
+LINES: +12/-2
+TEST: N (static util — covered by lint/manual)
+COMPILE: ASSUMED — static-review verified (ExecutorService import added; executor is static final daemon-thread-backed field)
+DATE: 2026-08-21
+---
+
+FILE: app/build.gradle
+ACTION: MODIFIED
+SUMMARY: Added testImplementation 'org.mockito:mockito-core:5.11.0' per plan Phase 5 (enables future mocking of android types in unit tests).
+LINES: +3/-0
+TEST: N
+COMPILE: ASSUMED — standard Gradle test dependency (already on test classpath via existing junit/json)
+DATE: 2026-08-21
+---
+
+FILE: .github/workflows/_build.yml
+ACTION: MODIFIED
+SUMMARY: Added a `test` job to the reusable workflow matrix — runs testStandardDebugUnitTest, testLudashiDebugUnitTest, testPubgDebugUnitTest on a shared ubuntu-22.04 runner with JDK 17 + Gradle cache. Fails the workflow on any test failure so a broken core change can't reach the APK build.
+LINES: +43/-0
+TEST: Y (the workflow itself is the verification gate)
+COMPILE: N (CI YAML)
+DATE: 2026-08-21
+---

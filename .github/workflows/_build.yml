@@ -249,3 +249,46 @@ jobs:
         path: app/build/outputs/apk/${{ matrix.flavor.id }}/release/Bannerlator-${{ inputs.release_number }}-${{ matrix.flavor.id }}.apk
         if-no-files-found: error
         retention-days: 7
+
+  # Unit tests — run the JVM suites (container config/repository/manager + pre-existing core tests)
+  # on ONE shared job, all three flavors' debug variants. Fails the workflow on any test failure so
+  # a broken core change can't reach the APK build. No NDK/cmake needed for JVM unit tests.
+  test:
+    runs-on: ubuntu-22.04
+
+    name: unit-tests
+
+    steps:
+    - name: Clone repository
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+        fetch-depth: 1
+
+    - name: Set up JDK 17 (preinstalled toolchain, no apt)
+      uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: '17'
+
+    - name: Set up Gradle (dependency + build cache)
+      uses: gradle/actions/setup-gradle@v4
+
+    - name: Resolve pinned imagefs hash (for cache key)
+      id: imagefs-pin
+      run: |
+        SHA=$(grep -oP 'imageFSSha256\s*=\s*"\K[0-9a-f]{64}' app/build.gradle)
+        if [ -z "$SHA" ]; then echo "could not read imageFSSha256 from app/build.gradle" >&2; exit 1; fi
+        echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+
+    - name: Cache base imagefs
+      uses: actions/cache@v4
+      with:
+        path: app/src/main/assets/imagefs.tar.zst
+        key: imagefs-${{ steps.imagefs-pin.outputs.sha }}
+
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
+
+    - name: Run unit tests (all flavors)
+      run: ./gradlew testStandardDebugUnitTest testLudashiDebugUnitTest testPubgDebugUnitTest -Dorg.gradle.jvmargs="-Xmx5g -XX:MaxMetaspaceSize=1g"

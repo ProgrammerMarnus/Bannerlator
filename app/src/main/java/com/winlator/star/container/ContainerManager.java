@@ -28,6 +28,7 @@ import org.json.JSONObject;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class ContainerManager {
@@ -35,6 +36,21 @@ public class ContainerManager {
     private int maxContainerId = 0;
     private final File homeDir;
     private final Context context;
+
+    /**
+     * Shared background worker for {@code *Async} methods. A single daemon thread instead of a
+     * throwaway {@code Executors.newSingleThreadExecutor()} per call — the old pattern spun up (and
+     * leaked) one non-daemon thread every time a container was created/duplicated/removed/imported/exported.
+     * FIFO ordering is fine; none of the async operations depend on interleaving. The daemon flag
+     * lets the process exit even when a call is in flight. (Mirrors the FileUtils.SIZE_ASYNC_EXECUTOR
+     * pattern applied elsewhere in this workstream.)
+     */
+    private static final ExecutorService BACKGROUND_EXECUTOR =
+            Executors.newSingleThreadExecutor(r -> {
+                Thread t = new Thread(r, "container-manager-bg");
+                t.setDaemon(true);
+                return t;
+            });
 
     private boolean isInitialized = false; // New flag to track initialization
 
@@ -161,7 +177,7 @@ public class ContainerManager {
 
     public void createContainerAsync(final JSONObject data, ContentsManager contentsManager, Callback<Container> callback) {
         final Handler handler = new Handler();
-        Executors.newSingleThreadExecutor().execute(() -> {
+        BACKGROUND_EXECUTOR.execute(() -> {
             final Container container = createContainer(data, contentsManager);
             handler.post(() -> callback.call(container));
         });
@@ -169,7 +185,7 @@ public class ContainerManager {
 
     public void duplicateContainerAsync(Container container, Callback<Container> callback) {
         final Handler handler = new Handler();
-        Executors.newSingleThreadExecutor().execute(() -> {
+        BACKGROUND_EXECUTOR.execute(() -> {
             final Container result = duplicateContainer(container);
             handler.post(() -> callback.call(result));
         });
@@ -177,7 +193,7 @@ public class ContainerManager {
 
     public void removeContainerAsync(Container container, Runnable callback) {
         final Handler handler = new Handler();
-        Executors.newSingleThreadExecutor().execute(() -> {
+        BACKGROUND_EXECUTOR.execute(() -> {
             removeContainer(container);
             handler.post(callback);
         });
@@ -387,7 +403,7 @@ public class ContainerManager {
     }
 
         public void importContainer(File importDir, Runnable callback) {
-        Executors.newSingleThreadExecutor().execute(() -> {
+        BACKGROUND_EXECUTOR.execute(() -> {
             try {
                 if (!importDir.exists() || !importDir.isDirectory()) {
                     Log.e("ContainerManager", "Invalid container directory for import: " + importDir.getPath());
@@ -435,8 +451,8 @@ public class ContainerManager {
         });
     }
 
-    public void exportContainer(Container container, Runnable callback) {
-        Executors.newSingleThreadExecutor().execute(() -> {
+        public void exportContainer(Container container, Runnable callback) {
+        BACKGROUND_EXECUTOR.execute(() -> {
             try {
                 // Create the export directory path
                 File exportDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Winlator/Backups/Containers");

@@ -34,6 +34,7 @@ import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Stack;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 
@@ -636,8 +637,22 @@ public abstract class FileUtils {
         }
     }
 
+    /**
+     * Shared worker for {@link #getSizeAsync}. A single daemon thread instead of a throwaway
+     * {@code Executors.newSingleThreadExecutor()} per call — the old pattern spun up (and leaked)
+     * one non-daemon thread every time a folder size was requested on the UI. FIFO ordering is
+     * fine; both callers only display a size and never depend on interleaving.
+     * The daemon flag lets the process exit even when a call is in flight.
+     */
+    private static final ExecutorService SIZE_ASYNC_EXECUTOR =
+            Executors.newSingleThreadExecutor(r -> {
+                Thread t = new Thread(r, "fileutils-size-async");
+                t.setDaemon(true);
+                return t;
+            });
+
     public static void getSizeAsync(File file, Callback<Long> callback) {
-        Executors.newSingleThreadExecutor().execute(() -> getSize(file, callback));
+        SIZE_ASYNC_EXECUTOR.execute(() -> getSize(file, callback));
     }
 
     private static void getSize(File file, Callback<Long> callback) {

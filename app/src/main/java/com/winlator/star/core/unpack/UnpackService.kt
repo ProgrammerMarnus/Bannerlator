@@ -16,6 +16,12 @@ import android.util.Log
 import com.winlator.star.UnpackArchiveActivity
 import com.winlator.star.core.StringUtils
 import java.io.File
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * Foreground service that runs one archive extraction to completion, surviving the app going to
@@ -71,8 +77,17 @@ class UnpackService : Service() {
 
     // Held for the whole extraction so the CPU keeps running with the screen off — screen-off CPU
     // suspend is the main reason a long background extraction appears to "pause". Balanced by a
-    // finally in the worker thread AND onDestroy, so it can never leak.
+    // finally in the worker coroutine AND onDestroy, so it can never leak.
     @Volatile private var wakeLock: PowerManager.WakeLock? = null
+
+    /**
+     * Coroutine scope for the extraction worker (plan Workstream A Phase 2 — raw Thread → structured
+     * coroutines). Runs on [Dispatchers.IO]; cancelled in [onDestroy] so no orphaned worker outlives
+     * the service. The blocking 7zz process is still reaped by ACTION_CANCEL's {@code proc?.destroy()}
+     * — coroutine cancellation cannot interrupt a blocking wait, which matches the previous Thread
+     * semantics exactly.
+     */
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -142,7 +157,7 @@ class UnpackService : Service() {
         // Speed/ETA and the reported size track the DATA the engine reads. For an InnoSetup installer
         // that is the Setup-*.bin payload total (passed in), not the small Setup.exe.
         val dataSize = if (totalSize > 0) totalSize else archive.length()
-        Thread {
+        scope.launch {
             acquireWakeLock()
             try {
             val startMs = SystemClock.elapsedRealtime()
@@ -211,10 +226,10 @@ class UnpackService : Service() {
                     val unarcTotal = Unarc.list(ctx, archive)?.totalBytes?.takeIf { it > 0 } ?: dataSize
                     UnpackManager.update { it.copy(archiveSize = unarcTotal) }
                     val polling = java.util.concurrent.atomic.AtomicBoolean(true)
-                    val poller = Thread {
+                    val poller = scope.launch {
                         var pLastB = 0L; var pLastT = SystemClock.elapsedRealtime(); var pEma = 0L
                         while (polling.get()) {
-                            runCatching { Thread.sleep(2500) }
+                            delay(2500)
                             val (count, bytes) = runCatching {
                                 var c = 0; var b = 0L
                                 destDir.walkTopDown().forEach { if (it.isFile) { c++; b += it.length() } }
@@ -320,11 +335,12 @@ class UnpackService : Service() {
                 releaseWakeLock()
                 stopSelf()
             }
-        }.also { it.name = "unpack-worker"; it.start() }
+        }
     }
 
-    override fun onDestroy() {
-        releaseWakeLock()   // backstop — the worker's finally already releases on normal exits
+        override fun onDestroy() {
+        scope.cancel()    // cancel any in-flight extraction/listing coroutine so it can't outlive the service
+        releaseWakeLock() // backstop — the worker's finally already releases on normal exits
         super.onDestroy()
     }
 

@@ -246,6 +246,9 @@ dependencies {
     // core's JSONObject calls run on the JVM instead of hitting android.jar's "not mocked" stubs.
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'org.json:json:20231013'
+    // Mockito for JVM unit tests (plan Workstream A Phase 5): the container repository/manager
+    // suites use hand-rolled fakes today, this dependency lets future suites mock android types.
+    testImplementation 'org.mockito:mockito-core:5.11.0'
     androidTestImplementation platform('androidx.compose:compose-bom:2024.02.00')
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'
     androidTestImplementation 'androidx.test:runner:1.5.2'
