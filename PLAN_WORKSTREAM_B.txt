@@ -1,0 +1,305 @@
+# ============================================================================
+# WORKSTREAM B: UI/COMPOSE LAYER — PERFORMANCE & STRUCTURE
+# ============================================================================
+# Target: Another LLM can pick this up and execute independently
+# No core logic changes — only Compose screens, state, overlays, theme
+# ============================================================================
+
+## CODEBASE CONTEXT
+- Project: Bannerlator (Winlator fork)
+- Package: com.winlator.star.ui
+- Language: Kotlin + Compose (Material3)
+- Key directories:
+  - app/src/main/java/com/winlator/star/ui/screens/        ← PRIMARY TARGET
+  - app/src/main/java/com/winlator/star/ui/overlays/
+  - app/src/main/java/com/winlator/star/ui/theme/
+  - app/src/main/java/com/winlator/star/ui/components/
+  - app/src/main/java/com/winlator/star/ui/dialogs/
+- XServerDrawer.kt = 204,471 lines (CRITICAL — must decompose)
+- XServerDrawerState.kt = 32,629 lines
+
+## FORBIDDEN (DO NOT TOUCH)
+- Any file under app/src/main/java/com/winlator/star/container/
+- Any file under app/src/main/java/com/winlator/star/perf/
+- Any file under app/src/main/java/com/winlator/star/renderer/
+- Any file under app/src/main/java/com/winlator/star/core/
+- Any file under app/src/main/java/com/winlator/star/xserver/
+- app/build.gradle
+- AndroidManifest.xml## PHASE 1: XSERVERDRAWER DECOMPOSITION (PRIORITY 1 — CRITICAL)
+
+### PROBLEM
+- XServerDrawer.kt = 204k lines in ONE @Composable — IDE OOM, slow compilation, unreviewable
+- XServerDrawerState.kt = 32k lines — single massive state object
+- All 6 tabs (Graphics, Performance, Audio, Input, Overlay, About) in one function
+- No per-tab state isolation, no testability, merge conflicts guaranteed
+
+### SOLUTION: Extract per-tab Composables + shared rail/header + tab state slices
+
+#### B1.1 CREATE: ui/screens/drawer/DrawerRail.kt (~120 lines)
+- The 60dp left rail with tab icons
+- Vertical scroll when screen too short
+- SpaceEvenly distribution of tab buttons
+- TabIconButton composable (icon + selected state)
+- No business logic — pure UI
+- Package: com.winlator.star.ui.screens.drawer
+
+#### B1.2 CREATE: ui/screens/drawer/DrawerHeader.kt (~60 lines)
+- Top row: Pause/Resume, Cast, Exit buttons
+- Binds to XServerDrawerState.isPaused, tvConnected, castSupported
+- Package: com.winlator.star.ui.screens.drawer
+
+#### B1.3 CREATE: ui/screens/drawer/DrawerTab.kt (~50 lines)
+- Sealed interface replacing TabType enum:
+  sealed interface DrawerTab {
+      val iconRes: Int
+      val titleRes: Int
+      data object Graphics : DrawerTab { override val iconRes = R.drawable.icon_display; override val titleRes = R.string.tab_graphics }
+      data object Performance : DrawerTab { override val iconRes = R.drawable.ic_sidebar_performance; override val titleRes = R.string.tab_performance }
+      data object Audio : DrawerTab { override val iconRes = R.drawable.icon_audio; override val titleRes = R.string.tab_audio }
+      data object Input : DrawerTab { override val iconRes = R.drawable.ic_sidebar_dpad; override val titleRes = R.string.tab_input }
+      data object Overlay : DrawerTab { override val iconRes = R.drawable.ic_sidebar_gpu; override val titleRes = R.string.tab_overlay }
+      data object About : DrawerTab { override val iconRes = R.drawable.icon_menu_gpu; override val titleRes = R.string.tab_about }
+  }
+- Package: com.winlator.star.ui.screens.drawer
+
+#### B1.4 CREATE: ui/screens/drawer/GraphicsTab.kt (~280 lines)
+- Sections: Resolution, Driver, Wrapper, HUD, Direct Scanout
+- Reads: Container (resolution, driver, wrapper), PerformanceSettings (HUD)
+- Writes: Container setters, PerformanceSettings setters
+- Uses existing Composables from ContainerDetailScreen where possible
+- Package: com.winlator.star.ui.screens.drawer
+
+#### B1.5 CREATE: ui/screens/drawer/PerformanceTab.kt (~320 lines)
+- Non-root: Sustained Perf, Priority Boost, Prefer Big Cores
+- Root tier: GPU Turbo, CPU Governor, CPU Freq, Cores Online, Thermal, Fan
+- Memory: Drop Caches, Deep Clean, Auto Deep Clean
+- Root grant flow: scroll-to-bottom + disclaimer → RootManager.requestGrant()
+- Binds to: PerformanceSettings flows, RootManager.state, PerfRevertRegistry.harnessProven
+- Package: com.winlator.star.ui.screens.drawer
+
+#### B1.6 CREATE: ui/screens/drawer/AudioTab.kt (~180 lines)
+- Audio driver selector (pulseaudio/pipewire/alsa)
+- PulseAudio config: latency, channels, sample rate
+- ALSA config: device, period, buffer
+- MIDI sound font picker
+- Binds to: Container audio settings
+- Package: com.winlator.star.ui.screens.drawer
+
+#### B1.7 CREATE: ui/screens/drawer/InputTab.kt (~250 lines)
+- Gyro: enabled, target, activator, sensitivity, deadzone, smoothing, invert
+- Touch: right-click mode, mouse simulation
+- Gamepad: layout, deadzone, trigger threshold
+- Keyboard: layout, modifiers
+- External controller: binding editor launch
+- Binds to: Container input settings, ControlsProfile
+- Package: com.winlator.star.ui.screens.drawer
+
+#### B1.8 CREATE: ui/screens/drawer/OverlayTab.kt (~220 lines)
+- FPS/HUD: style (fusion/classic), mode, elements (FPS, CPU, GPU, RAM, VRAM, etc.)
+- HUD scale, size, lock position
+- ReShade: effect picker, loadout editor, master toggle
+- Magnifier: zoom, enable
+- Notifications: toast duration, position
+- Binds to: Container HUD/ReShade settings, PerformanceHudModels
+- Package: com.winlator.star.ui.screens.drawer
+
+#### B1.9 CREATE: ui/screens/drawer/AboutTab.kt (~80 lines)
+- Version: BuildConfig.VERSION_NAME, VERSION_CODE
+- Update check: UpdateManager.checkForUpdates()
+- Powered by: Wine, Box64, FEX, Turnip, Mesa
+- Credits: brunodev85, MishaMixXx, The412Banner, ptitSeb
+- Licenses: open-source licenses dialog
+- Debug: logcat dump, crash report toggle
+- Package: com.winlator.star.ui.screens.drawer
+
+#### B1.10 MODIFY: XServerDrawerState.kt
+- Add: val tabStates: MutableStateFlow<Map<DrawerTab, TabState>>
+- TabState data class per tab (expanded sections, scroll position, pending writes)
+- Expose per-tab slices: fun graphicsState(): StateFlow<GraphicsTabState>
+- Keep existing: selectedTab, isPaused, tvConnected, castSupported, windowList, etc.
+- Remove tab-specific fields from root state (move to TabState)
+- Package: com.winlator.star.ui
+
+#### B1.11 REFACTOR: XServerDrawer.kt (204k → ~100 lines)
+@Composable
+fun XServerDrawer() {
+    val state = XServerDrawerState
+    val selectedTab by state.selectedTab.collectAsState()
+    
+    Row(Modifier.fillMaxHeight().width(380.dp).background(MaterialTheme.colorScheme.surface)) {
+        DrawerRail(selectedTab, onTabClick = { state.selectedTab.value = it })
+        
+        Column(Modifier.fillMaxSize()) {
+            DrawerHeader(
+                isPaused = state.isPaused.value,
+                onPauseClick = { state.togglePause() },
+                tvConnected = state.tvConnected.value,
+                castSupported = state.castSupported.value,
+                onCastClick = { state.toggleCast() },
+                onExitClick = { state.requestExit() }
+            )
+            
+            when (selectedTab) {
+                DrawerTab.Graphics -> GraphicsTab(state.graphicsState())
+                DrawerTab.Performance -> PerformanceTab(state.performanceState())
+                DrawerTab.Audio -> AudioTab(state.audioState())
+                DrawerTab.Input -> InputTab(state.inputState())
+                DrawerTab.Overlay -> OverlayTab(state.overlayState())
+                DrawerTab.About -> AboutTab()
+            }
+        }
+    }
+}
+
+### VERIFICATION GATES (ALL MUST PASS)
+1. ./gradlew :app:compileDebugKotlin — compiles in < 60s (was 120s+)
+2. Manual: Open drawer → all 6 tabs render → switch tabs → rotate → background/foreground
+3. Manual: Change setting in Graphics tab → persists → reopen drawer → value retained
+4. Manual: Root grant flow in Performance tab → toggles apply → background → reverts
+---
+
+## PHASE 2: SETTINGS SCREENS REFACTOR (PRIORITY 2)
+
+### TARGETS
+- PerformanceSettingsScreen.kt → use ViewModel, split into sections
+- ContainerDetailScreen.kt → delegate to tabs from B1 (reuse Composables)
+- SettingsScreen.kt → extract Preference wrappers to Compose
+- AppearanceScreen.kt → use ThemePreset, AppThemeState properly
+
+### PATTERN: ViewModel per Screen
+```kotlin
+@HiltViewModel
+class PerformanceSettingsViewModel @Inject constructor(
+    private val perfSettings: PerformanceSettings,
+    private val rootManager: RootManager
+) : ViewModel() {
+    val sustainedPerfMode = perfSettings.sustainedPerfMode
+    // ... expose flows as StateFlow
+    
+    fun onSustainedPerfModeChanged(v: Boolean) = perfSettings.setSustainedPerfMode(v)
+}
+```
+
+### VERIFICATION
+- Each screen has ViewModel + test
+- No raw `remember { mutableStateOf() }` for shared state
+- Navigation args → ViewModel → Repository → UI
+
+---
+
+## PHASE 3: CONTAINER/LIST SCREENS (PRIORITY 3)
+
+### TARGETS
+- ContainersScreen.kt (1,116 lines) → LazyColumn + ContainerItem composable
+- ShortcutsScreen.kt → LazyGrid + ShortcutCard
+- ContentsHubScreen.kt → PagingSource for remote content
+
+### PATTERN
+- Extract item Composables (ContainerItem, ShortcutCard, ContentCard)
+- Use Paging 3 for remote lists
+- ViewModel with Repository (from Workstream A)
+
+---
+
+## PHASE 4: IN-GAME OVERLAYS (PRIORITY 4)
+
+### TARGETS
+- ControllerToastOverlay.kt (19k lines!) → decompose
+- MagnifierOverlay.kt → simplify
+- PauseBoxOverlay.kt → extract PauseMenu composable
+- ExternalModeOverlay.kt → state-driven
+
+### VERIFICATION
+- Overlays show/hide without jank
+- No memory leaks (profile with Studio)
+- Touch targets ≥ 48dp
+
+---
+
+## PHASE 5: STATE MANAGEMENT (PRIORITY 5)
+
+### TASKS
+- Introduce ViewModel for all screens (Hilt/ViewModel KTX)
+- Replace `remember { mutableStateOf() }` with `collectAsStateWithLifecycle()`
+- Unify Container → ContainerConfig (from Workstream A) in UI
+- Single source of truth: Repository → ViewModel → UI
+
+---
+
+## PHASE 6: THEME & ACCESSIBILITY (PRIORITY 6)
+
+### TARGETS
+- Theme.kt: ensure all colors from MaterialTheme.colorScheme
+- ThemePreset.kt: AMOLED, PureBlack, Custom — all work
+- AppThemeState.kt: persist/restore correctly
+- Content descriptions on all interactive elements
+- Touch target enforcement (≥ 48dp via Modifier.minimumInteractiveSize)
+
+---
+
+## TRACKING FILE
+After EACH file change, append to:
+/home/marnus/VS-Code/Bannerlator/CHANGES_WORKSTREAM_B.txt
+
+Format:
+```
+FILE: path/to/File.kt
+ACTION: CREATED | MODIFIED | REFACTORED
+SUMMARY: One-line description
+LINES: +X/-Y
+TEST: Y/N
+COMPILE: Y/N
+DATE: YYYY-MM-DD
+---
+```
+
+---
+
+## EXECUTION ORDER (SEQUENTIAL WITHIN STREAM)
+
+```
+1. DrawerRail.kt
+2. DrawerHeader.kt
+3. DrawerTab.kt
+4. GraphicsTab.kt
+5. PerformanceTab.kt
+6. AudioTab.kt
+7. InputTab.kt
+8. OverlayTab.kt
+9. AboutTab.kt
+10. XServerDrawerState.kt (modify)
+11. XServerDrawer.kt (refactor)
+```
+
+---
+
+## SUCCESS CRITERIA (PHASE 1 COMPLETE)
+✅ 9 new files in ui/screens/drawer/
+✅ XServerDrawer.kt < 150 lines
+✅ XServerDrawerState.kt has tabStates Map
+✅ All 6 tabs functional, settings persist
+✅ Compilation time reduced > 40%
+✅ CHANGES_WORKSTREAM_B.txt has 11+ entries
+
+---
+
+## CONTACT / ESCALATION
+- If Container API changed: sync with Workstream A (ContainerConfig)
+- If PerformanceSettings flow missing: check perf/PerformanceSettings.kt
+- If HUD models missing: check widget/perfhud/
+- If theme tokens missing: check ui/theme/Color.kt, Theme.kt
+- If strings missing: check res/values/strings.xml
+
+---
+
+## ESTIMATED EFFORT
+- Phase 1: 2-3 days (single LLM, sequential)
+- Phase 2: 1-2 days
+- Phase 3: 2 days
+- Phase 4: 1-2 days
+- Phase 5: 1 day
+- Phase 6: 0.5 days
+
+============================================================================
+END OF PLAN_WORKSTREAM_B.txt
+5. No Compose recomposition loops (check with Layout Inspector)

@@ -1,0 +1,280 @@
+# ============================================================================
+# WORKSTREAM A: CORE ARCHITECTURE & STABILITY
+# ============================================================================
+# Target: Another LLM can pick this up and execute independently
+# No UI/Compose changes — only Java/Kotlin core logic, testing, build
+# ============================================================================
+
+## CODEBASE CONTEXT
+- Project: Bannerlator (Winlator fork) — Android app running Wine/Box64/FEX
+- Package: com.winlator.star
+- Language: ~60% Kotlin, ~40% Java
+- Key directories:
+  - app/src/main/java/com/winlator/star/container/     ← PRIMARY TARGET
+  - app/src/main/java/com/winlator/star/perf/
+  - app/src/main/java/com/winlator/star/renderer/
+  - app/src/main/java/com/winlator/star/core/
+  - app/src/main/java/com/winlator/star/xserver/
+- Build: Gradle 8.8, Kotlin 2.0.21, Compose BOM 2024.02.00
+- Min SDK: 26, Target SDK: 28, NDK: arm64-v8a only
+
+## FORBIDDEN (DO NOT TOUCH)
+- Any file under app/src/main/java/com/winlator/star/ui/
+- Any *.kt in theme/, screens/, dialogs/, overlays/, components/
+- app/build.gradle (except adding test deps)
+- AndroidManifest.xml
+- Any Compose-related code
+
+## PHASE 1: CONTAINER REFACTOR + TESTS (PRIORITY 1)
+
+### PROBLEM
+- Container.java = 1,313 lines — mixes config, runtime state, JSON serialization, file I/O
+- ContainerManager.java = 550 lines — direct file I/O, raw Thread/Executor, no abstraction
+- ZERO unit tests for container logic
+- Gyro migration logic embedded in ContainerManager constructor
+- Import/export uses blocking I/O on background threads without structured concurrency
+
+### SOLUTION: Split Container into 3 focused classes + Repository pattern
+
+#### A1.1 CREATE: container/ContainerConfig.java (~350 lines)
+- Immutable data class holding ALL container settings
+- All current Container getters/setters → constructor parameters
+- JSON serialization: toJson() / fromJson(jsonString)
+- Default values as constants (mirror Container.DEFAULT_*)
+- No file I/O, no runtime state, no context
+- Package: com.winlator.star.container
+- Must compile with Java 17 (project uses JavaVersion.VERSION_17)
+
+#### A1.2 CREATE: container/ContainerState.java (~120 lines)
+- Mutable runtime state only:
+  - runningPid: Int
+  - sessionId: String
+  - lastLaunched: Long
+  - activeWindows: List<WindowInfo>
+  - currentResolution: String
+- No persistence, no settings
+- Package: com.winlator.star.container
+
+#### A1.3 CREATE: container/ContainerIO.java (~280 lines)
+- Static utility methods (no instance state):
+  - save(Config, File) → Boolean
+  - load(File) → Config
+  - importContainer(srcDir, destDir, Context) → Config
+  - exportContainer(Config, destDir, Context) → Boolean
+  - migrateLegacyPrefs(Context, List<Config>) — extracts gyro migration from ContainerManager
+  - scanContainerDirs(File homeDir) → List<Config>
+- Uses existing: FileUtils, TarCompressorUtils, ImageFs
+- Returns Result<T> or throws IOException (caller handles)
+- Package: com.winlator.star.container
+
+#### A1.4 CREATE: container/ContainerRepository.kt (~60 lines)
+- Interface (Kotlin):
+  interface ContainerRepository {
+      suspend fun getAll(): Result<List<ContainerConfig>>
+      suspend fun get(id: Int): Result<ContainerConfig>
+      suspend fun save(config: ContainerConfig): Result<Unit>
+      suspend fun delete(id: Int): Result<Unit>
+      suspend fun importContainer(src: File): Result<ContainerConfig>
+      suspend fun exportContainer(config: ContainerConfig, dest: File): Result<Unit>
+  }
+- Package: com.winlator.star.container
+- Uses Result<T> for error handling (no exceptions across boundary)
+
+#### A1.5 CREATE: container/FileContainerRepository.kt (~150 lines)
+- Implementation of ContainerRepository
+- Constructor: (homeDir: File, io: ContainerIO, context: Context)
+- Uses coroutines (Dispatchers.IO) for all file operations
+- Delegates to ContainerIO static methods
+- Caches scanned containers, invalidates on save/delete/import
+- Package: com.winlator.star.container
+
+#### A1.6 REFACTOR: Container.java (1313 → ~400 lines)
+- Keep public API for backward compatibility (Shortcut, XServerDisplayActivity depend on it)
+- Internal delegation:
+  - private val config: ContainerConfig
+  - private val state: ContainerState
+  - getX() → config.getX()
+  - setX() → config.setX() + markDirty()
+  - saveData() → ContainerIO.save(config, getConfigFile())
+  - static load() → ContainerIO.load() → new Container(config, state)
+- Remove all file I/O, JSON parsing, import/export, migration logic
+- Keep: enums (XrControllerMapping), constants (DEFAULT_*), getConfigFile(), getDesktopDir(), etc.
+
+#### A1.7 MODIFY: ContainerManager.java
+- Add constructor: ContainerManager(Context, ContainerRepository)
+- Keep no-arg constructor for backward compat (creates FileContainerRepository)
+- Remove: loadContainers(), saveContainers(), importContainer(), exportContainer(), migrateGyroPrefsToContainers()
+- Delegate to repository (suspend functions → run on Dispatchers.IO via CoroutineScope)
+- Add CoroutineScope field (SupervisorJob + Dispatchers.Main.immediate)
+- Expose Flow<List<ContainerConfig>> for UI observation
+- Package: com.winlator.star.container
+
+#### A1.8 CREATE: container/ContainerTest.kt (~200 lines)
+- Location: app/src/test/java/com/winlator/star/container/
+- Test class: ContainerConfigTest
+- Tests:
+  - jsonRoundTrip(): toJson() → fromJson() == original
+  - defaultsMatch(): fromJson("{}") has all DEFAULT_* values
+  - migration(): old gyro keys → new config structure
+  - equality(): same config = equal, different = not equal
+  - allEnumValues(): XrControllerMapping serialization
+- Use: JUnit 4, org.json.JSONObject (already in testImplementation)
+- Run: ./gradlew :app:testDebugUnitTest
+
+#### A1.9 CREATE: container/ContainerRepositoryTest.kt (~180 lines)
+- Location: app/src/test/java/com/winlator/star/container/
+- Test class: FileContainerRepositoryTest
+- Uses: TemporaryFolder rule, mock Context
+- Tests:
+  - saveAndLoad(): save → getAll() contains it
+  - delete(): delete → getAll() empty
+  - importExport(): import → export → re-import = same config
+  - errorHandling(): corrupt JSON → Result.failure
+  - listing(): multiple containers sorted by ID
+- Run: ./gradlew :app:testDebugUnitTest
+
+#### A1.10 CREATE: container/ContainerManagerTest.kt (~150 lines)
+- Location: app/src/test/java/com/winlator/star/container/
+- Test class: ContainerManagerTest
+- Uses: mock Repository, TestCoroutineDispatcher
+- Tests:
+  - createContainer(): manager.create() → repo.save() called
+  - deleteContainer(): manager.delete() → repo.delete() called
+  - switchContainer(): manager.setActive() → updates active ID
+  - lifecycle(): onDestroy() cancels scope
+- Run: ./gradlew :app:testDebugUnitTest
+
+### VERIFICATION GATES (ALL MUST PASS)
+1. ./gradlew :app:compileDebugJavaWithJavac — Java compiles
+2. ./gradlew :app:compileDebugKotlin — Kotlin compiles
+3. ./gradlew :app:testDebugUnitTest — ALL new tests pass
+4. ./gradlew :app:lintDebug — no new warnings
+5. Manual: MainActivity launches, Containers screen shows containers
+
+### TRACKING FILE
+After EACH file change, append to:
+/home/marnus/VS-Code/Bannerlator/CHANGES_WORKSTREAM_A.txt
+
+Format:
+```
+FILE: path/to/File.java
+ACTION: CREATED | MODIFIED | REFACTORED
+SUMMARY: One-line description
+LINES: +X/-Y
+TEST: Y/N
+COMPILE: Y/N
+DATE: YYYY-MM-DD
+---
+```
+
+## PHASE 2: THREADING → COROUTINES (PRIORITY 2)
+
+### TARGETS (raw Thread/Executor → structured coroutines)
+- ContainerManager.java: Executors.newSingleThreadExecutor() → CoroutineScope
+- UpdateManager.kt: Thread { } → CoroutineScope + Dispatchers.IO
+- FileUtils.java: static Thread pools → CoroutineScope injection
+- DownloadForegroundService.kt: HandlerThread → LifecycleScope
+- UnpackService.kt: IntentService-style → CoroutineWorker (WorkManager)
+- PreloaderOverlay.kt: Thread → rememberCoroutineScope
+
+### PATTERN
+```kotlin
+// Before
+Thread { doWork() }.start()
+
+// After
+lifecycleScope.launch(Dispatchers.IO) { doWork() }
+// or
+viewModelScope.launch(Dispatchers.IO) { doWork() }
+// or (non-lifecycle)
+CoroutineScope(SupervisorJob() + Dispatchers.IO).launch { doWork() }
+```
+
+### VERIFICATION
+- No raw `new Thread()`, `Executors.`, `HandlerThread` in modified files
+- All suspend functions use proper dispatchers
+- Cancellation works (job.cancel() stops work)
+- ./gradlew :app:compileDebugKotlin passes
+
+## PHASE 3: RENDERER ABSTRACTION (PRIORITY 3)
+
+### PROBLEM
+- GLRenderer, VulkanRenderer, ASurfaceRenderer duplicate ~40% logic
+- DirectScanout tightly coupled to GLRenderer
+- EffectComposer only in GL path
+- No common interface for: present, resize, pause, resume, HUD tick
+
+### TARGET INTERFACE: HostRenderer (already exists, extend it)
+```java
+public interface HostRenderer {
+    void onSurfaceCreated();
+    void onSurfaceChanged(int w, int h);
+    void onDrawFrame();
+    void onPause();
+    void onResume();
+    void setHudFrameTick(IntConsumer tick);
+    void setNativeMode(boolean enabled);
+    boolean isNativeMode();
+    void setWindowTexFilter(int filter);
+}
+```
+
+### TASKS
+1. Extract BaseRenderer abstract class with shared logic
+2. Make GLRenderer/VulkanRenderer/ASurfaceRenderer extend BaseRenderer
+3. Move DirectScanout to renderer/ (not GL-specific)
+4. EffectComposer → renderer.effects.EffectPipeline (interface)
+5. XServerView uses HostRenderer only (no concrete type checks)
+
+### VERIFICATION
+- All 3 renderers compile
+- Switch renderer in Container settings → works
+- DirectScanout works on Vulkan path
+- ./gradlew :app:compileDebugJavaWithJavac passes
+
+## PHASE 4: PERFORMANCE CORE HARDENING (PRIORITY 4)
+
+### TARGETS
+- PerfRootApplier.kt: add timeout/cancellation to sysfs writes
+- RootManager.kt: cache grant result, avoid repeated su calls
+- PerfRevertRegistry.kt: ensure revert on ALL exit paths (crash, kill, ANR)
+- TempWatchdog.kt: use ProcessLifecycleOwner (already done), add thermal trip test
+- PerformanceSettings.kt: add validation (mutually exclusive toggles)
+
+### VERIFICATION
+- Root grant → toggles apply → background → reverts
+- Thermal watchdog triggers → disables thermal toggle
+- No sysfs leaks after crash (simulate: kill -9)
+
+## PHASE 5: BUILD & CI (PRIORITY 5)
+
+### TASKS
+- app/build.gradle: add testImplementation "org.mockito:mockito-core:5.11.0"
+- .github/workflows/build.yml: add test stage
+- .github/workflows/release.yml: verify versionCode bump
+- productFlavors: ensure standard/ludashi/pubg all compile
+
+## SUCCESS CRITERIA (PHASE 1 COMPLETE)
+✅ ContainerConfig/State/IO exist and compile
+✅ ContainerRepository interface + File impl exist
+✅ Container.java < 500 lines, delegates properly
+✅ ContainerManager uses Repository + Coroutines
+✅ 3 test classes, all passing
+✅ No compilation errors, no lint regressions
+✅ CHANGES_WORKSTREAM_A.txt has 10+ entries
+
+## CONTACT / ESCALATION
+- If blocked on UI contract: check XServerDisplayActivity.java for Container usage
+- If JSON format unclear: see Container.java lines 200-400 (toJson/fromJson)
+- If gyro migration unclear: see ContainerManager.java lines 50-100
+- If build fails: check app/build.gradle for kotlinOptions, compose versions
+
+## ESTIMATED EFFORT
+- Phase 1: 2-3 days (single LLM, sequential)
+- Phase 2: 1-2 days
+- Phase 3: 3-4 days
+- Phase 4: 1 day
+- Phase 5: 0.5 days
+
+============================================================================
+END OF PLAN_WORKSTREAM_A.txt
