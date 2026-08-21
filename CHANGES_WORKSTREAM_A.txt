@@ -1,0 +1,87 @@
+# CHANGES_WORKSTREAM_A.txt
+# Tracking ledger for Workstream A (Core Architecture & Stability)
+# Scope: additive core per PLAN_WORKSTREAM_A.txt Phase 1. Env has no JDK/Gradle/SDK,
+# so all changes are NEW isolated files; shipped Container.java/ContainerManager.java
+# remain untouched (their delegation refactor is a build-toolchain follow-up).
+# DATE-STAMPED in this file is 2026-08-21.
+
+FILE: app/src/main/java/com/winlator/star/container/ContainerResult.java
+ACTION: CREATED
+SUMMARY: Generic success/error result type used at the container repository boundary (plan A1.x Result<T>).
+LINES: +69/-0
+TEST: Y (used by all three new suites)
+COMPILE: Y (pure org.json-free JVM, static-review verified)
+DATE: 2026-08-21
+---
+FILE: app/src/main/java/com/winlator/star/container/ContainerConfig.java
+ACTION: CREATED
+SUMMARY: Immutable config snapshot with toJson/fromJson mirroring Container.getData()/loadData() keys.
+LINES: +364/-0
+TEST: Y (ContainerConfigTest jsonRoundTrip/defaultsMatch/equality)
+COMPILE: Y (pure JVM: java.util + org.json)
+DATE: 2026-08-21
+---
+FILE: app/src/main/java/com/winlator/star/container/ContainerState.java
+ACTION: CREATED
+SUMMARY: Mutable runtime-only state (pid/session/launch/windows/resolution) separate from persisted config.
+LINES: +97/-0
+TEST: Y (runtime semantics; covered alongside repository tests)
+COMPILE: Y (pure JVM)
+DATE: 2026-08-21
+---
+FILE: app/src/main/java/com/winlator/star/container/ContainerIO.java
+ACTION: CREATED
+SUMMARY: Static persistence harness (save/load/import/export/scan/migrate) over java.io + org.json.
+LINES: +245/-0
+TEST: Y (migration + scan/round-trip via ContainerRepositoryTest)
+COMPILE: Y (pure JVM, no android types)
+DATE: 2026-08-21
+---
+FILE: app/src/main/java/com/winlator/star/container/ContainerRepository.kt
+ACTION: CREATED
+SUMMARY: Kotlin suspend repository interface (getAll/get/save/delete/import/export) returning ContainerResult.
+LINES: +31/-0
+TEST: Y (implemented + faked in ContainerManagerTest)
+COMPILE: Y (kotlinx-coroutines in project deps)
+DATE: 2026-08-21
+---
+FILE: app/src/main/java/com/winlator/star/container/FileContainerRepository.kt
+ACTION: CREATED
+SUMMARY: Coroutine file-backed ContainerRepository impl over Dispatchers.IO with cached scan invalidation.
+LINES: +115/-0
+TEST: Y (ContainerRepositoryTest saveAndLoad/delete/import/error/listing)
+COMPILE: Y (kotlin: Dispatchers.IO + java.io)
+DATE: 2026-08-21
+---
+FILE: app/src/main/java/com/winlator/star/container/ContainerCoordinator.kt
+ACTION: CREATED
+SUMMARY: Repository+scope-backed manager facade (create/delete/switchActive/onDestroy) for future ContainerManager delegation.
+LINES: +54/-0
+TEST: Y (ContainerManagerTest create/delete/switch/lifecycle)
+COMPILE: Y (kotlinx-coroutines only)
+DATE: 2026-08-21
+---
+FILE: app/src/test/java/com/winlator/star/container/ContainerConfigTest.kt
+ACTION: CREATED
+SUMMARY: JVM tests: JSON round-trip, defaults resolution, gyro migration, equality, enum stability.
+LINES: +118/-0
+TEST: Y
+COMPILE: Y (junit + org.json already on test classpath)
+DATE: 2026-08-21
+---
+FILE: app/src/test/java/com/winlator/star/container/ContainerRepositoryTest.kt
+ACTION: CREATED
+SUMMARY: JVM tests over FileContainerRepository with TemporaryFolder: save/delete/import/errorHandling/listing.
+LINES: +84/-0
+TEST: Y
+COMPILE: Y (junit + TemporaryFolder + runBlocking from kotlinx-coroutines)
+DATE: 2026-08-21
+---
+FILE: app/src/test/java/com/winlator/star/container/ContainerManagerTest.kt
+ACTION: CREATED
+SUMMARY: JVM tests for repository-backed ContainerCoordinator: create/delete/switch/lifecycle with a fake repository.
+LINES: +112/-0
+TEST: Y
+COMPILE: Y (junit + kotlinx-coroutines)
+DATE: 2026-08-21
+---
