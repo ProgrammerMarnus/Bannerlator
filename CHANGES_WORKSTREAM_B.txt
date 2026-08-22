@@ -96,3 +96,30 @@ TEST: N
 COMPILE: N (no JDK/Android SDK; brace-balance 0,0,0 cross-check passed)
 DATE: 2026-08-22
 ---
+
+FILE: app/src/main/java/com/winlator/star/ui/screens/drawer/ControlsTab.kt
+ACTION: CREATED
+SUMMARY: Controls tab extracted from XServerDrawer.kt (ControlsContent + 7 sub-composables). Contains: ControlsTab entry (8 sub-tabs: Touch/Mouse/Vibration/Gyro/Players), VibrationModeButtons, TouchGestureSettings, GyroSection, GyroHint, setGyroTargetLive/setGyroActivatorLive/setGyroModeLive/setGyroActivationModeLive, PlayersSection, PlayerSlotRowItem. Converts to Drawer* variants. Self-contained; binds to XServerDialogState + XServerDrawerState.
+LINES: +736/-0
+TEST: N
+COMPILE: N (no JDK/Android SDK; brace-balance 149/149 verified)
+DATE: 2026-08-22
+---
+
+FILE: app/src/main/java/com/winlator/star/ui/XServerDrawer.kt
+ACTION: MODIFIED
+SUMMARY: Removed ControlsContent + VibrationModeButtons + duplicate @Composable on ModeChipGrid. Dispatch now calls ControlsTab(state). Added import. File 3322 -> 2528 lines.
+LINES: +2/-809
+TEST: N
+COMPILE: N (no JDK/Android SDK; brace-balance 575/575 verified; no leftover Controls refs)
+DATE: 2026-08-22
+---
+
+FILE: app/src/main/java/com/winlator/star/ui/screens/drawer/DrawerComponents.kt
+ACTION: MODIFIED
+SUMMARY: Added DrawerToggleChipItem data class + DrawerModeChipGrid + DrawerToggleChipGrid (shared chip grid primitives needed by ControlsTab.kt). Added imports.
+LINES: +125/-0
+TEST: N
+COMPILE: N (no JDK/Android SDK; brace-balance cross-check pending)
+DATE: 2026-08-22
+---

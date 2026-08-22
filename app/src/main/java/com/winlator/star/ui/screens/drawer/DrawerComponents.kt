@@ -1,12 +1,15 @@
 package com.winlator.star.ui.screens.drawer
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -34,6 +37,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.winlator.star.ui.theme.LocalAccentDim
@@ -315,6 +319,127 @@ internal fun DrawerSeShaderToggle(label: String, checked: Boolean, enabled: Bool
         )
         Spacer(Modifier.width(4.dp))
         Text(label, color = MaterialTheme.colorScheme.onSurface, fontSize = 13.sp)
+    }
+}
+// ───── Chip grids (ModeChipGrid / ToggleChipGrid) + one-chip item ─────
+// Shared by the Graphics, HUD and Controls tabs. Extracted verbatim from XServerDrawer.kt.
+
+/**
+ * One on/off chip in a [DrawerToggleChipGrid]. Same tuple ToggleRow takes (label + checked +
+ * enabled + callback), just laid out as a chip instead of a full-width switch row.
+ */
+internal data class DrawerToggleChipItem(
+    val label: String,
+    val checked: Boolean,
+    val enabled: Boolean = true,
+    val onToggle: (Boolean) -> Unit
+)
+
+@Composable
+internal fun DrawerModeChipGrid(
+    items: List<Triple<String, Boolean, () -> Unit>>,
+    perRow: Int,
+    enabled: Boolean = true,
+    disabledIndices: Set<Int> = emptySet(),
+) {
+    val accent = MaterialTheme.colorScheme.primary
+    val accentDim = LocalAccentDim.current
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        items.withIndex().chunked(perRow).forEach { row ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                row.forEach { (index, item) ->
+                    val (label, isOn, onTap) = item
+                    val chipEnabled = enabled && index !in disabledIndices
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (isOn && chipEnabled) accent else Color.Black)
+                            .border(
+                                width = 1.dp,
+                                color = if (isOn && chipEnabled) accent else accentDim,
+                                shape = RoundedCornerShape(8.dp)
+                            )
+                            .clickable(enabled = chipEnabled) { onTap() }
+                            .padding(vertical = 9.dp)
+                    ) {
+                        Text(
+                            label,
+                            color = when {
+                                !chipEnabled -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                                isOn         -> Color.Black
+                                else         -> accent
+                            },
+                            fontSize = 12.sp,
+                            fontWeight = if (isOn && chipEnabled) FontWeight.Bold else FontWeight.Medium
+                        )
+                    }
+                }
+                // Pad short final rows so every chip keeps the same width (grid stays aligned).
+                repeat(perRow - row.size) { Spacer(Modifier.weight(1f)) }
+            }
+        }
+    }
+}
+
+// Compact stand-in for a run of ToggleRows: same chip language as [DrawerModeChipGrid] above
+// (accent fill + bold black text ON; black bg + accentDim 1dp border + accent medium text OFF,
+// equal widths, short rows padded with Spacer), but every chip toggles independently. Packing
+// adjacent toggles 2-4 per row is where the vertical space comes back - a Switch row costs ~4x the
+// height of a chip. Disabled chips keep ToggleRow's alpha-0.4 grey-out and swallow taps.
+@Composable
+internal fun DrawerToggleChipGrid(items: List<DrawerToggleChipItem>, perRow: Int = 3) {
+    val accent = MaterialTheme.colorScheme.primary
+    val accentDim = LocalAccentDim.current
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        items.chunked(perRow).forEach { row ->
+            // IntrinsicSize.Min + fillMaxHeight keeps a row level when one label wraps to two lines.
+            Row(
+                modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                // Split the padding for a short final row across both sides so it sits CENTRED,
+                // and every chip in the grid keeps the identical width (no odd-sized leftovers).
+                val missing = perRow - row.size
+                val leading = missing / 2
+                repeat(leading) { Spacer(Modifier.weight(1f)) }
+                row.forEach { item ->
+                    val isOn = item.checked && item.enabled
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (isOn) accent else Color.Black)
+                            .border(
+                                width = 1.dp,
+                                color = if (isOn) accent else accentDim,
+                                shape = RoundedCornerShape(8.dp)
+                            )
+                            .then(
+                                if (item.enabled) Modifier.clickable { item.onToggle(!item.checked) }
+                                else Modifier.alpha(0.4f)
+                            )
+                            .padding(horizontal = 6.dp, vertical = 9.dp)
+                    ) {
+                        Text(
+                            item.label,
+                            color = if (isOn) Color.Black else accent,
+                            fontSize = 12.sp,
+                            lineHeight = 14.sp,
+                            textAlign = TextAlign.Center,
+                            fontWeight = if (isOn) FontWeight.Bold else FontWeight.Medium
+                        )
+                    }
+                }
+                repeat(missing - leading) { Spacer(Modifier.weight(1f)) }
+            }
+        }
     }
 }
 }
