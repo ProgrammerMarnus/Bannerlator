@@ -61,3 +61,22 @@ TEST: N
 COMPILE: N (no JDK/Android SDK; symbol + brace-balance cross-check passed)
 DATE: 2026-08-22
 ---
+NOTE: User directive "Make all choices. Cache this behavior" -> proceeding autonomously through
+Workstream B decomposition without per-step clarification; only pausing on hard blockers.
+
+FILE: app/src/main/java/com/winlator/star/ui/screens/drawer/DrawerComponents.kt
+ACTION: MODIFIED
+SUMMARY: Added 6 internal helpers: DrawerPrettyDxWrapper/DrawerPrettyRenderer/DrawerTidyDevice (pure string formatters), DrawerRefreshRateSlider/DrawerIntSlider/DrawerSeShaderToggle (presentational sliders/toggles). Added imports (Checkbox/CheckboxDefaults/width/remember/mutableStateOf/sp/roundToInt). File 174 -> 319 lines.
+LINES: +149/-0
+TEST: N
+COMPILE: N (no JDK/Android SDK; symbol + brace-balance 0,0,0 cross-check passed)
+DATE: 2026-08-22
+---
+FILE: app/src/main/java/com/winlator/star/ui/XServerDrawer.kt
+ACTION: MODIFIED
+SUMMARY: Replaced 6 private bodies (RefreshRateSlider, IntSlider, SeShaderToggle, prettyDxWrapper, prettyRenderer, tidyDevice) with thin same-signature wrappers delegating to new DrawerXxx helpers; added 6 imports. Zero call-site change. File 4010 -> 3906 lines (4309 at Phase-1 start).
+LINES: +12/-106
+TEST: N
+COMPILE: N (no JDK/Android SDK; symbol + brace-balance 0,0,0 cross-check passed)
+DATE: 2026-08-22
+---

@@ -123,6 +123,12 @@ import com.winlator.star.ui.screens.drawer.DrawerSectionHeader
 import com.winlator.star.ui.screens.drawer.DrawerToggleRow
 import com.winlator.star.ui.screens.drawer.DrawerLabeledSlider
 import com.winlator.star.ui.screens.drawer.DrawerAccentButton
+import com.winlator.star.ui.screens.drawer.DrawerPrettyDxWrapper
+import com.winlator.star.ui.screens.drawer.DrawerPrettyRenderer
+import com.winlator.star.ui.screens.drawer.DrawerTidyDevice
+import com.winlator.star.ui.screens.drawer.DrawerRefreshRateSlider
+import com.winlator.star.ui.screens.drawer.DrawerIntSlider
+import com.winlator.star.ui.screens.drawer.DrawerSeShaderToggle
 import com.winlator.star.ui.screens.outlinedMenuCard
 import com.winlator.star.ui.theme.LocalAccentDim
 import com.winlator.star.ui.theme.WinlatorTheme
@@ -1827,110 +1833,17 @@ private fun ToggleChipGrid(items: List<ToggleChipItem>, perRow: Int = 3) {
 // Greyed when disabled (Auto on or display not VRR-capable).
 @Composable
 private fun RefreshRateSlider(rates: List<Int>, selected: Int, enabled: Boolean, autoRate: Int, onSelect: (Int) -> Unit) {
-    val accent = MaterialTheme.colorScheme.primary
-    val stops = remember(rates) { listOf(0) + rates }
-    var idx by remember(selected, stops) { mutableStateOf(stops.indexOf(selected).coerceAtLeast(0)) }
-    val dim = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
-    // When the slider is disabled by Auto, the manual selection is meaningless — show the live actual
-    // display rate instead, kept in normal blue so it reads as a real value, not a greyed leftover.
-    val showAuto = !enabled && autoRate > 0
-    val rightText = when {
-        showAuto -> "$autoRate Hz"
-        stops[idx] == 0 -> "Off"
-        else -> "${stops[idx]} Hz"
-    }
-    Column(modifier = Modifier.padding(vertical = 4.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text("Rate", style = MaterialTheme.typography.bodySmall, color = if (enabled) MaterialTheme.colorScheme.onSurface else dim)
-            Text(
-                rightText,
-                style = MaterialTheme.typography.bodySmall,
-                color = if (enabled || showAuto) accent else dim,
-                fontWeight = FontWeight.Medium
-            )
-        }
-        Slider(
-            value = idx.toFloat(),
-            onValueChange = { idx = it.roundToInt().coerceIn(stops.indices) },
-            onValueChangeFinished = { onSelect(stops[idx]) },
-            valueRange = 0f..(stops.size - 1).toFloat(),
-            steps = (stops.size - 2).coerceAtLeast(0),
-            enabled = enabled,
-            modifier = Modifier.fillMaxWidth()
-        )
-        // Tick labels under each notch so the snap values are visible, not just anonymous notches.
-        // Padded by ~the thumb radius so the end labels line up with the end notches.
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            stops.forEach { s ->
-                Text(
-                    if (s == 0) "Off" else "$s",
-                    fontSize = 10.sp,
-                    color = if (enabled) MaterialTheme.colorScheme.onSurface else dim
-                )
-            }
-        }
-    }
+    DrawerRefreshRateSlider(rates, selected, enabled, autoRate, onSelect)
 }
 
 @Composable
 private fun IntSlider(label: String, value: Int, valueRange: IntRange, onValueChange: (Int) -> Unit, onValueChangeFinished: (() -> Unit)? = null, steps: Int = -1, enabled: Boolean = true) {
-    val accent = MaterialTheme.colorScheme.primary
-    // steps < 0 -> continuous (one stop per integer); steps >= 0 -> snap to that many
-    // interior stops (e.g. steps = 3 over 0..100 yields the 5 positions {0,25,50,75,100}).
-    val sliderSteps = if (steps >= 0) steps else (valueRange.last - valueRange.first - 1)
-    Column(modifier = Modifier.padding(vertical = 4.dp).then(if (enabled) Modifier else Modifier.alpha(0.4f))) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(text = label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
-            Text(text = "$value", style = MaterialTheme.typography.bodySmall, color = accent, fontWeight = FontWeight.Medium)
-        }
-        Slider(
-            value = value.toFloat(),
-            onValueChange = { onValueChange(it.roundToInt()) },
-            onValueChangeFinished = { onValueChangeFinished?.invoke() },
-            valueRange = valueRange.first.toFloat()..valueRange.last.toFloat(),
-            steps = sliderSteps,
-            enabled = enabled,
-            modifier = Modifier.fillMaxWidth()
-        )
-    }
+    DrawerIntSlider(label, value, valueRange, onValueChange, onValueChangeFinished, steps, enabled)
 }
 
 @Composable
 private fun SeShaderToggle(label: String, checked: Boolean, enabled: Boolean = true, onCheckedChange: (Boolean) -> Unit) {
-    val accent = MaterialTheme.colorScheme.primary
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(MaterialTheme.colorScheme.surface)
-            .then(if (enabled) Modifier.clickable { onCheckedChange(!checked) } else Modifier.alpha(0.4f))
-            .padding(horizontal = 12.dp, vertical = 6.dp)
-    ) {
-        Checkbox(
-            checked = checked,
-            onCheckedChange = onCheckedChange,
-            enabled = enabled,
-            colors = CheckboxDefaults.colors(
-                checkedColor = accent,
-                uncheckedColor = ToggleThumbOff,
-                checkmarkColor = Color.White
-            )
-        )
-        Spacer(Modifier.width(4.dp))
-        Text(label, color = MaterialTheme.colorScheme.onSurface, fontSize = 13.sp)
-    }
+    DrawerSeShaderToggle(label, checked, enabled, onCheckedChange)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -3983,28 +3896,11 @@ private fun ContainerInfoRow(label: String, value: String, valueColor: Color? = 
 }
 
 /** Prettify a raw dxwrapper id (e.g. "dxvk+vkd3d") to its display form ("DXVK+VKD3D"). */
-private fun prettyDxWrapper(raw: String): String {
-    if (raw.isBlank() || raw == "—") return raw
-    return raw.split("+").joinToString("+") { token ->
-        when (token.trim().lowercase()) {
-            "dxvk" -> "DXVK"
-            "vkd3d" -> "VKD3D"
-            "wined3d" -> "WineD3D"
-            "vegas" -> "VEGAS"
-            else -> token.trim().uppercase()
-        }
-    }
-}
+private fun prettyDxWrapper(raw: String): String = DrawerPrettyDxWrapper(raw)
 
 /** Prettify a raw renderer id (e.g. "vulkan") to its display form ("Vulkan"). */
-private fun prettyRenderer(raw: String): String = when (raw.trim().lowercase()) {
-    "" -> raw
-    "vulkan" -> "Vulkan"
-    "gl", "opengl", "gles" -> "OpenGL"
-    "vortek" -> "Vortek"
-    else -> raw.trim().replaceFirstChar { it.uppercase() }
-}
+private fun prettyRenderer(raw: String): String = DrawerPrettyRenderer(raw)
 
 /** Tidy the device line: "8 cores" -> "8c" so it fits the narrow value column without wrapping to a
  *  dangling separator. */
-private fun tidyDevice(raw: String): String = raw.replace(" cores", "c")
+private fun tidyDevice(raw: String): String = DrawerTidyDevice(raw)

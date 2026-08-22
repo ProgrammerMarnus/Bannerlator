@@ -10,9 +10,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -20,6 +23,10 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -28,7 +35,9 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.winlator.star.ui.theme.LocalAccentDim
+import kotlin.math.roundToInt
 
 /**
  * Workstream B - shared drawer primitives, extracted verbatim from XServerDrawer.kt.
@@ -171,4 +180,141 @@ internal fun DrawerAccentButton(text: String, modifier: Modifier = Modifier, onC
     ) {
         Text(text, fontWeight = FontWeight.SemiBold)
     }
+// ───── String formatters (extracted from XServerDrawer.kt, display-only) ─────
+
+/** Prettify a raw dxwrapper id (e.g. \"dxvk+vkd3d\") to its display form (\"DXVK+VKD3D\"). */
+internal fun DrawerPrettyDxWrapper(raw: String): String {
+    if (raw.isBlank() || raw == "—") return raw
+    return raw.split("+").joinToString("+") { token ->
+        when (token.trim().lowercase()) {
+            "dxvk" -> "DXVK"
+            "vkd3d" -> "VKD3D"
+            "wined3d" -> "WineD3D"
+            "vegas" -> "VEGAS"
+            else -> token.trim().uppercase()
+        }
+    }
+}
+
+/** Prettify a raw renderer id (e.g. \"vulkan\") to its display form (\"Vulkan\"). */
+internal fun DrawerPrettyRenderer(raw: String): String = when (raw.trim().lowercase()) {
+    "" -> raw
+    "vulkan" -> "Vulkan"
+    "gl", "opengl", "gles" -> "OpenGL"
+    "vortek" -> "Vortek"
+    else -> raw.trim().replaceFirstChar { it.uppercase() }
+}
+
+/** Tidy the device line: \"8 cores\" -> \"8c\" so it fits the narrow value column. */
+internal fun DrawerTidyDevice(raw: String): String = raw.replace(" cores", "c")
+
+// ───── Refresh-rate snap slider ─────
+
+@Composable
+internal fun DrawerRefreshRateSlider(rates: List<Int>, selected: Int, enabled: Boolean, autoRate: Int, onSelect: (Int) -> Unit) {
+    val accent = MaterialTheme.colorScheme.primary
+    val stops = remember(rates) { listOf(0) + rates }
+    var idx by remember(selected, stops) { mutableStateOf(stops.indexOf(selected).coerceAtLeast(0)) }
+    val dim = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+    val showAuto = !enabled && autoRate > 0
+    val rightText = when {
+        showAuto -> "$autoRate Hz"
+        stops[idx] == 0 -> "Off"
+        else -> "${stops[idx]} Hz"
+    }
+    Column(modifier = Modifier.padding(vertical = 4.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Rate", style = MaterialTheme.typography.bodySmall, color = if (enabled) MaterialTheme.colorScheme.onSurface else dim)
+            Text(
+                rightText,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (enabled || showAuto) accent else dim,
+                fontWeight = FontWeight.Medium
+            )
+        }
+        Slider(
+            value = idx.toFloat(),
+            onValueChange = { idx = it.roundToInt().coerceIn(stops.indices) },
+            onValueChangeFinished = { onSelect(stops[idx]) },
+            valueRange = 0f..(stops.size - 1).toFloat(),
+            steps = (stops.size - 2).coerceAtLeast(0),
+            enabled = enabled,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            stops.forEach { s ->
+                Text(
+                    if (s == 0) "Off" else "$s",
+                    fontSize = 10.sp,
+                    color = if (enabled) MaterialTheme.colorScheme.onSurface else dim
+                )
+            }
+        }
+    }
+}
+
+// ───── Integer snap slider ─────
+
+@Composable
+internal fun DrawerIntSlider(label: String, value: Int, valueRange: IntRange, onValueChange: (Int) -> Unit, onValueChangeFinished: (() -> Unit)? = null, steps: Int = -1, enabled: Boolean = true) {
+    val accent = MaterialTheme.colorScheme.primary
+    // steps < 0 -> continuous (one stop per integer); steps >= 0 -> snap to that many
+    // interior stops (e.g. steps = 3 over 0..100 yields the 5 positions {0,25,50,75,100}).
+    val sliderSteps = if (steps >= 0) steps else (valueRange.last - valueRange.first - 1)
+    Column(modifier = Modifier.padding(vertical = 4.dp).then(if (enabled) Modifier else Modifier.alpha(0.4f))) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(text = label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
+            Text(text = "$value", style = MaterialTheme.typography.bodySmall, color = accent, fontWeight = FontWeight.Medium)
+        }
+        Slider(
+            value = value.toFloat(),
+            onValueChange = { onValueChange(it.roundToInt()) },
+            onValueChangeFinished = { onValueChangeFinished?.invoke() },
+            valueRange = valueRange.first.toFloat()..valueRange.last.toFloat(),
+            steps = sliderSteps,
+            enabled = enabled,
+            modifier = Modifier.fillMaxWidth()
+        )
+    }
+}
+
+// ───── Screen-effect shader toggle (checkbox) ─────
+
+@Composable
+internal fun DrawerSeShaderToggle(label: String, checked: Boolean, enabled: Boolean = true, onCheckedChange: (Boolean) -> Unit) {
+    val accent = MaterialTheme.colorScheme.primary
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(MaterialTheme.colorScheme.surface)
+            .then(if (enabled) Modifier.clickable { onCheckedChange(!checked) } else Modifier.alpha(0.4f))
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+    ) {
+        Checkbox(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            enabled = enabled,
+            colors = CheckboxDefaults.colors(
+                checkedColor = accent,
+                uncheckedColor = ToggleThumbOff,
+                checkmarkColor = Color.White
+            )
+        )
+        Spacer(Modifier.width(4.dp))
+        Text(label, color = MaterialTheme.colorScheme.onSurface, fontSize = 13.sp)
+    }
+}
 }
