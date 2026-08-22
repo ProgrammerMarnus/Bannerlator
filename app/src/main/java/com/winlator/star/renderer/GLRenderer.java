@@ -34,36 +34,19 @@ import java.util.ArrayList;
 import javax.microedition.khronos.egl.EGLConfig;
 import javax.microedition.khronos.opengles.GL10;
 
-public class GLRenderer implements GLSurfaceView.Renderer, WindowManager.OnWindowModificationListener, Pointer.OnPointerMotionListener, HostRenderer {
+public class GLRenderer extends BaseRenderer implements GLSurfaceView.Renderer, WindowManager.OnWindowModificationListener, Pointer.OnPointerMotionListener {
 
-    public final XServerView xServerView;
-    private final XServer xServer;
     public final VertexAttribute quadVertices = new VertexAttribute("position", 2);
     private final float[] tmpXForm1 = XForm.getInstance();
     private final float[] tmpXForm2 = XForm.getInstance();
     private final CursorMaterial cursorMaterial = new CursorMaterial();
     private final WindowMaterial windowMaterial = new WindowMaterial();
-    public final ViewTransformation viewTransformation = new ViewTransformation();
     private final Drawable rootCursorDrawable;
     private final ArrayList<RenderableWindow> renderableWindows = new ArrayList<>();
     
-    // Fullscreen aspect-ratio mode (#71). STRETCH fills the surface (distorts); OFF/FIT letterbox.
-    private volatile int fullscreenMode = Container.FULLSCREEN_OFF;
     private boolean toggleFullscreen = false;
-    private boolean isStretch() { return fullscreenMode == Container.FULLSCREEN_STRETCH; }
     public boolean viewportNeedsUpdate = true;
-    private boolean cursorVisible = true;
-    private boolean screenOffsetYRelativeToCursor = false;
-    private String[] unviewableWMClasses = null;
-
-    @Override
-    public void setUnviewableWMClasses(String classes) {
-        this.unviewableWMClasses = classes != null ? classes.split(";") : null;
-    }
-    private float magnifierZoom = 1.0f;
     private boolean magnifierEnabled = true;
-    public int surfaceWidth;
-    public int surfaceHeight;
 
     // ---- GL Native Rendering (direct scanout via SurfaceControl / SurfaceFlinger) ----
     // P3: lifecycle only. Mirrors VulkanRenderer's nativeMode model, adapted to GL's pull loop.
@@ -73,17 +56,11 @@ public class GLRenderer implements GLSurfaceView.Renderer, WindowManager.OnWindo
     // is P4 — until then the game is still composited by GL; the opaque game SC is bufferless so it
     // does not occlude the GL frame.
     private DirectScanout scanout;
-    private boolean nativeMode = false;
     private boolean xRenderingPausedForScanout = false;
     private boolean swapRB = false;
     private Cursor lastScanoutCursor = null;
 
-    // Per-present HUD driver (P4). The GL-native FLIP path bypasses onDrawFrame AND copyArea, so the
-    // perf HUD is never ticked in native mode unless we drive it from presentScanout. Decoupled from
-    // any specific HUD widget (works for FrameRating classic + horizontal + GameHub PerfHud).
-    // Mirrors VulkanRenderer.setHudFrameTick / ASurfaceRenderer.setHudFrameTick.
-    private java.util.function.IntConsumer hudFrameTick = null;
-    public void setHudFrameTick(java.util.function.IntConsumer c) { hudFrameTick = c; }
+    // Per-present HUD driver (P4): hudFrameTick/setHudFrameTick are inherited from BaseRenderer.
 
     // Selectable sampler filter for window/content drawables only (the cursor stays LINEAR so the
     // pointer never goes blocky). Mirrors the Vulkan filter-int convention used by setUpscaler:
@@ -103,8 +80,7 @@ public class GLRenderer implements GLSurfaceView.Renderer, WindowManager.OnWindo
     }
 
     public GLRenderer(XServerView xServerView, XServer xServer) {
-        this.xServerView = xServerView;
-        this.xServer = xServer;
+        super(xServerView, xServer);
         this.effectComposer = new EffectComposer(this);
         rootCursorDrawable = createRootCursorDrawable();
 
@@ -535,10 +511,17 @@ public class GLRenderer implements GLSurfaceView.Renderer, WindowManager.OnWindo
         }
     }
 
-    public void setCursorVisible(boolean cursorVisible) { this.cursorVisible = cursorVisible; xServerView.requestRender(); }
-    public boolean isCursorVisible() { return cursorVisible; }
-    public boolean isScreenOffsetYRelativeToCursor() { return screenOffsetYRelativeToCursor; }
-    public void setScreenOffsetYRelativeToCursor(boolean screenOffsetYRelativeToCursor) { this.screenOffsetYRelativeToCursor = screenOffsetYRelativeToCursor; xServerView.requestRender(); }
+    @Override
+    public void setCursorVisible(boolean cursorVisible) {
+        super.setCursorVisible(cursorVisible);
+        xServerView.requestRender();
+    }
+
+    @Override
+    public void setScreenOffsetYRelativeToCursor(boolean screenOffsetYRelativeToCursor) {
+        super.setScreenOffsetYRelativeToCursor(screenOffsetYRelativeToCursor);
+        xServerView.requestRender();
+    }
     public boolean isFullscreen() { return fullscreenMode != Container.FULLSCREEN_OFF; }
     @Override public int getFullscreenMode() { return fullscreenMode; }
     @Override public void setFullscreenMode(int mode) {
@@ -559,18 +542,19 @@ public class GLRenderer implements GLSurfaceView.Renderer, WindowManager.OnWindo
         viewTransformation.update(surfaceWidth, surfaceHeight,
                 xServer.screenInfo.width, xServer.screenInfo.height, fullscreenMode);
     }
-    public float getMagnifierZoom() { return magnifierZoom; }
-    public void setMagnifierZoom(float magnifierZoom) { this.magnifierZoom = magnifierZoom; xServerView.requestRender(); }
-    public int getSurfaceWidth() { return surfaceWidth; }
-    public int getSurfaceHeight() { return surfaceHeight; }
+    @Override
+    public void setMagnifierZoom(float magnifierZoom) {
+        super.setMagnifierZoom(magnifierZoom);
+        xServerView.requestRender();
+    }
     public boolean isViewportNeedsUpdate() { return viewportNeedsUpdate; }
     public void setViewportNeedsUpdate(boolean viewportNeedsUpdate) { this.viewportNeedsUpdate = viewportNeedsUpdate; }
     public VertexAttribute getQuadVertices() { return quadVertices; }
     public EffectComposer getEffectComposer (){ return effectComposer; }
     public void setUnviewableWMClasses(String... unviewableWMNames) { this.unviewableWMClasses = unviewableWMNames; }
 
-    // HostRenderer implementation
-    @Override public XServerView getXServerView() { return xServerView; }
+    // HostRenderer implementation (getXServerView and the trivial accessors are inherited from
+    // BaseRenderer; only the backend-specific behaviour is overridden above).
     // Forward to the X server so the direct-scanout first-frame pause (P4) can stop guest content
     // updates; was a no-op before native rendering came to GL. Mirrors VulkanRenderer.setRenderingEnabled.
     @Override public void setRenderingEnabled(boolean enabled) { xServer.setRenderingEnabled(enabled); }
@@ -586,15 +570,16 @@ public class GLRenderer implements GLSurfaceView.Renderer, WindowManager.OnWindo
         windowTexFilter = (mode == 2) ? GLES20.GL_NEAREST : GLES20.GL_LINEAR;
         xServerView.requestRender();
     }
+    /** Raw sampler-filter entry point (HostRenderer contract): consumes the GL enum directly. */
+    @Override public void setWindowTexFilter(int filter) { windowTexFilter = filter; xServerView.requestRender(); }
     @Override public void setFpsWindowId(int id) {}
     @Override public void setFrameRating(Object fr) {}
     // Container FPS-limiter value (0 = uncapped), forwarded to the scanout game-layer setFrameRate
     // VRR vote so SurfaceFlinger's refresh pick tracks the cap on the Native Rendering path (the
     // guest IdleNotify limiter still does the actual pacing). Mirrors VulkanRenderer.
-    private int fpsLimit = 0;
-    @Override public int getFpsLimit() { return fpsLimit; }
+    // The shared fpsLimit field lives in BaseRenderer; this override adds the GL scanout retarget.
     @Override public void setFpsLimit(int limit) {
-        this.fpsLimit = limit;
+        super.setFpsLimit(limit);
         if (nativeMode && scanout != null) scanout.setTargetFps(scanoutTargetFps());
     }
 
@@ -610,8 +595,6 @@ public class GLRenderer implements GLSurfaceView.Renderer, WindowManager.OnWindo
     /** R/B-swap hint for the game SurfaceControl color transform. Seeded at launch from the
      *  container's renderer swap-R/B setting; consumed by {@link DirectScanout#enable}. */
     public void setSwapRB(boolean enabled) { this.swapRB = enabled; }
-
-    public boolean isNativeMode() { return nativeMode; }
 
     // Set the desired native (direct-scanout) mode BEFORE the surface is created. onSurfaceCreated
     // builds the scanout SurfaceControls when nativeMode is already true, so this is the correct

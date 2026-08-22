@@ -41,7 +41,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * (i.e. the DXVK/DRI3 game frame). CPU-only window chrome (the explorer desktop) is not yet
  * scanned out — that needs Drawable→AHB backing and is a follow-up.</p>
  */
-public class ASurfaceRenderer implements HostRenderer,
+public class ASurfaceRenderer extends BaseRenderer implements
         WindowManager.OnWindowModificationListener,
         Pointer.OnPointerMotionListener {
 
@@ -73,25 +73,11 @@ public class ASurfaceRenderer implements HostRenderer,
     // gates the per-present HUD tick for the CPU path so the HUD still reflects the game cadence.
     private final AtomicInteger skipFPSCount = new AtomicInteger(0);
 
-    public final XServerView xServerView;
-    private final XServer xServer;
-    private final ViewTransformation viewTransformation = new ViewTransformation();
-
-    private int surfaceWidth;
-    private int surfaceHeight;
     private boolean surfaceInitialized = false;
 
-    // HostRenderer-backed state
-    private boolean cursorVisible = true;     // container-level cursor toggle
+    // HostRenderer-backed state (surface size, fullscreen/magnifier/offset, cursor visibility,
+    // fps limit/window and the HUD tick live in BaseRenderer).
     private boolean gameCursorVisible = true; // guest-requested cursor visibility
-    // Fullscreen aspect-ratio mode (#71). STRETCH fills the surface (distorts); OFF/FIT letterbox.
-    private int fullscreenMode = Container.FULLSCREEN_OFF;
-    private boolean isStretch() { return fullscreenMode == Container.FULLSCREEN_STRETCH; }
-    private boolean screenOffsetYRelativeToCursor = false;
-    private float magnifierZoom = 1.0f;
-    private int fpsLimit = 0;
-    private int fpsWindowId = -1;
-    private String[] unviewableWMClasses = null;
     private Cursor lastCursor = null;
     private Object hudRef = null;
 
@@ -121,8 +107,7 @@ public class ASurfaceRenderer implements HostRenderer,
     private int renderListSize = 0;
 
     public ASurfaceRenderer(XServerView xServerView, XServer xServer) {
-        this.xServerView = xServerView;
-        this.xServer = xServer;
+        super(xServerView, xServer);
         xServer.windowManager.addOnWindowModificationListener(this);
         xServer.pointer.addOnPointerMotionListener(this);
     }
@@ -513,50 +498,31 @@ public class ASurfaceRenderer implements HostRenderer,
     public void onScanoutFrameComplete(long packed) {
     }
 
-    // Ticked once per presented game frame (the activity wires this, gating on its FPS window),
-    // mirroring VulkanRenderer.setHudFrameTick — the perf HUD is otherwise never driven under ASR.
-    private java.util.function.IntConsumer hudFrameTick = null;
-    public void setHudFrameTick(java.util.function.IntConsumer c) { hudFrameTick = c; }
+    // Ticked once per presented game frame; hudFrameTick/setHudFrameTick are inherited from BaseRenderer.
 
     // -------------------------------------------------------------------------
     // HostRenderer
     // -------------------------------------------------------------------------
 
-    @Override public XServerView getXServerView() { return xServerView; }
     @Override public void setRenderingEnabled(boolean enabled) { xServer.setRenderingEnabled(enabled); }
     @Override public void requestRender() { /* ASR presents via SurfaceFlinger transactions */ }
     @Override public void forceCleanup() { onSurfaceDestroyed(); }
 
     @Override
     public void setCursorVisible(boolean visible) {
-        this.cursorVisible = visible;
+        super.setCursorVisible(visible);
         if (!surfaceInitialized) return;
         if (visible) sendCursorToNative(lastCursor);
         else nativeScanoutSetCursorVisibility(false);
     }
 
-    @Override public boolean isCursorVisible() { return cursorVisible; }
-
-    @Override
-    public void setUnviewableWMClasses(String wmClasses) {
-        this.unviewableWMClasses = wmClasses != null ? wmClasses.split(";") : null;
-    }
-
     @Override public void setFilterMode(int mode) { /* ASR has no shader/filter pass */ }
-    @Override public void setMagnifierZoom(float zoom) { this.magnifierZoom = zoom; }
-    @Override public float getMagnifierZoom() { return magnifierZoom; }
     @Override public void toggleFullscreen() { setFullscreenMode(Container.nextFullscreenMode(fullscreenMode)); }
     @Override public boolean isFullscreen() { return fullscreenMode != Container.FULLSCREEN_OFF; }
     @Override public int getFullscreenMode() { return fullscreenMode; }
     @Override public void setFullscreenMode(int mode) { fullscreenMode = mode; updateTransform(); updateScene(); }
-    @Override public void setScreenOffsetYRelativeToCursor(boolean b) { screenOffsetYRelativeToCursor = b; }
-    @Override public boolean isScreenOffsetYRelativeToCursor() { return screenOffsetYRelativeToCursor; }
-    @Override public void setFpsWindowId(int id) { this.fpsWindowId = id; }
+    // Trivial HostRenderer accessors (screen offset, fps window/limit, surface size) inherited.
     @Override public void setFrameRating(Object fr) { this.hudRef = fr; }
-    @Override public int getFpsLimit() { return fpsLimit; }
-    @Override public void setFpsLimit(int limit) { this.fpsLimit = limit; }
-    @Override public int getSurfaceWidth() { return surfaceWidth; }
-    @Override public int getSurfaceHeight() { return surfaceHeight; }
 
     // -------------------------------------------------------------------------
     // Native contract (libasurface_renderer.so).

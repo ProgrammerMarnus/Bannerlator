@@ -2,6 +2,8 @@ package com.winlator.star.renderer;
 
 import com.winlator.star.widget.XServerView;
 
+import java.util.function.IntConsumer;
+
 public interface HostRenderer {
     XServerView getXServerView();
     void setRenderingEnabled(boolean enabled);
@@ -27,4 +29,14 @@ public interface HostRenderer {
     void setFpsLimit(int limit);
     int getSurfaceWidth();
     int getSurfaceHeight();
+    // Performance overlay tick: called from the render/present thread when a new window frame
+    // is presented, so the FPS HUD can update. Set by the activity or overlay layer.
+    void setHudFrameTick(IntConsumer tick);
+    // Direct-scanout (native mode) rendering: when enabled, the renderer hands the game surface
+    // directly to the compositor and minimizes host-side composition. Mirrors VulkanRenderer/GLRenderer.
+    void setNativeMode(boolean enabled);
+    boolean isNativeMode();
+    // Window-texture filter used by the magnifier and cursor overlays (GLRenderer only;
+    // others are no-ops for consistency).
+    void setWindowTexFilter(int filter);
 }

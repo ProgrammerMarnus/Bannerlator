@@ -11,7 +11,7 @@ import com.winlator.star.renderer.material.ShaderMaterial;
 import java.util.ArrayList;
 import java.util.List;
 
-public class EffectComposer {
+public class EffectComposer implements com.winlator.star.renderer.effects.EffectPipeline {
     // Constants
     private static final String TAG = "EffectComposer";
     private boolean isRendering = false;

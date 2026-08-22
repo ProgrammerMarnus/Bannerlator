@@ -10,7 +10,6 @@ import com.winlator.star.R;
 import com.winlator.star.container.Container;
 import com.winlator.star.renderer.GPUImage;
 import com.winlator.star.renderer.HostRenderer;
-import com.winlator.star.renderer.ViewTransformation;
 import com.winlator.star.widget.FrameRating;
 import com.winlator.star.widget.XServerView;
 import com.winlator.star.xserver.Bitmask;
@@ -25,27 +24,14 @@ import com.winlator.star.xserver.XServer;
 
 import java.util.ArrayList;
 
-public class VulkanRenderer implements WindowManager.OnWindowModificationListener,
-                                       Pointer.OnPointerMotionListener, HostRenderer {
+public class VulkanRenderer extends BaseRenderer implements WindowManager.OnWindowModificationListener,
+                                       Pointer.OnPointerMotionListener {
 
     static { System.loadLibrary("vulkan_renderer"); }
 
-    public final XServerView xServerView;
-    private final XServer xServer;
     private long nativeHandle = 0;
     private final Object lock = new Object();
 
-    public final ViewTransformation viewTransformation = new ViewTransformation();
-    // Fullscreen aspect-ratio mode (#71). STRETCH fills the surface (distorts); OFF/FIT letterbox.
-    private int fullscreenMode = Container.FULLSCREEN_OFF;
-    private boolean isStretch() { return fullscreenMode == Container.FULLSCREEN_STRETCH; }
-    private float magnifierZoom = 1.0f;
-    private boolean screenOffsetYRelativeToCursor = false;
-    public int surfaceWidth;
-    public int surfaceHeight;
-    private String[] unviewableWMClasses = null;
-    private boolean cursorVisible = false;
-    private boolean nativeMode = false;
     private String driverPath = null;
     private java.util.concurrent.ExecutorService initExecutor = null;
     private volatile boolean initComplete = false;
@@ -62,8 +48,9 @@ public class VulkanRenderer implements WindowManager.OnWindowModificationListene
     private android.view.Surface        scanoutCursorSurface;
 
     public VulkanRenderer(XServerView xServerView, XServer xServer) {
-        this.xServerView = xServerView;
-        this.xServer = xServer;
+        super(xServerView, xServer);
+        // Vulkan historically starts with the cursor hidden until the guest sets one.
+        cursorVisible = false;
         rootCursorDrawable = createRootCursorDrawable();
         xServer.windowManager.addOnWindowModificationListener(this);
         xServer.pointer.addOnPointerMotionListener(this);
@@ -634,14 +621,13 @@ public class VulkanRenderer implements WindowManager.OnWindowModificationListene
         }
     }
 
+    @Override
     public void setCursorVisible(boolean visible) {
-        cursorVisible = visible;
+        super.setCursorVisible(visible);
         synchronized (lock) {
             if (nativeHandle != 0) { nativeSetCursorVisible(nativeHandle, visible); if (visible) sendCursorToNative(lastCursor); }
         }
     }
-
-    public boolean isCursorVisible() { return cursorVisible; }
 
     public void setNativeMode(boolean mode) {
         if (this.nativeMode == mode) return;
@@ -708,8 +694,6 @@ public class VulkanRenderer implements WindowManager.OnWindowModificationListene
         // inherits the dark app theme and renders as a black box with invisible text.
         xServerView.post(() -> com.winlator.star.core.AppUtils.showToast(xServerView.getContext(), msg));
     }
-
-    public boolean isNativeMode() { return nativeMode; }
 
     // Set the desired native (direct-scanout) mode BEFORE the surface is created. onSurfaceCreated
     // sets up the scanout SurfaceControls when nativeMode is already true, so this is the correct
@@ -828,17 +812,10 @@ public class VulkanRenderer implements WindowManager.OnWindowModificationListene
     public int getNativeColorFormat() { return 0; }
 
     private FrameRating classicHudRef = null;
-    private int fpsWindowId = -1;
 
-    public void setFpsWindowId(int id) { fpsWindowId = id; }
+    // fpsWindowId / hudFrameTick / setFpsWindowId / setHudFrameTick are inherited from BaseRenderer.
 
-    // The FPS/perf HUD is normally ticked from copyArea's onDrawListener, but the Vulkan AHB
-    // present path bypasses copyArea, so the HUD froze (no values) on the Vulkan renderer. The
-    // activity sets this to tick the HUD per present; it passes window.id so the activity can gate
-    // on its FPS window. Decoupled from classicHudRef so it works for both HUD variants.
-    private java.util.function.IntConsumer hudFrameTick = null;
-    public void setHudFrameTick(java.util.function.IntConsumer c) { hudFrameTick = c; }
-
+    @Override
     public void setFrameRating(Object fr) {
         if (fr instanceof FrameRating) classicHudRef = (FrameRating) fr;
     }
@@ -851,18 +828,16 @@ public class VulkanRenderer implements WindowManager.OnWindowModificationListene
         xServerView.queueEvent(this::updateScene);
     }
     public void toggleFullscreen() { setFullscreenMode(Container.nextFullscreenMode(fullscreenMode)); }
-    public void setScreenOffsetYRelativeToCursor(boolean b) { screenOffsetYRelativeToCursor = b; synchronized (lock) { updateTransform(); } }
-    public boolean isScreenOffsetYRelativeToCursor() { return screenOffsetYRelativeToCursor; }
-    public void setMagnifierZoom(float zoom) {
-        magnifierZoom = zoom;
+    @Override
+    public void setScreenOffsetYRelativeToCursor(boolean b) {
+        super.setScreenOffsetYRelativeToCursor(b);
         synchronized (lock) { updateTransform(); }
     }
-    public float getMagnifierZoom() { return magnifierZoom; }
     @Override
-    public void setUnviewableWMClasses(String classes) {
-        this.unviewableWMClasses = classes != null ? classes.split(";") : null;
+    public void setMagnifierZoom(float zoom) {
+        super.setMagnifierZoom(zoom);
+        synchronized (lock) { updateTransform(); }
     }
-    private int fpsLimit = 0;
     private int     pendingPresentMode    = 2;
     private int     pendingFilterMode     = 0;
     private int     pendingUpscaler       = 0;
@@ -881,9 +856,9 @@ public class VulkanRenderer implements WindowManager.OnWindowModificationListene
     private float   pendingColorContrast   = 0.0f;  // -100..100 slider; 0 = neutral
     private float   pendingColorGamma      = 1.0f;  // 0.5..3.0 slider; 1.0 = neutral
     private boolean pendingSwapRB         = false;
-    public int getFpsLimit() { return fpsLimit; }
+    @Override
     public void setFpsLimit(int limit) {
-        this.fpsLimit = limit;
+        super.setFpsLimit(limit);
         if (android.os.Build.VERSION.SDK_INT >= 30 && scanoutGameSC != null) {
             float targetFps = limit > 0 ? (float)limit
                 : xServerView.getDisplay() != null
@@ -894,12 +869,9 @@ public class VulkanRenderer implements WindowManager.OnWindowModificationListene
                 .apply();
         }
     }
-    public int getSurfaceWidth() { return surfaceWidth; }
-    public int getSurfaceHeight() { return surfaceHeight; }
     public void requestRender() {}
 
-    // HostRenderer
-    @Override public XServerView getXServerView() { return xServerView; }
+    // HostRenderer (getXServerView and the trivial accessors are inherited from BaseRenderer)
     @Override public void setRenderingEnabled(boolean enabled) { xServer.setRenderingEnabled(enabled); }
 
     private static class RenderableWindow {

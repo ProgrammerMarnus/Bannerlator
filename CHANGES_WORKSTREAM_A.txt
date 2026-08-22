@@ -159,4 +159,59 @@ LINES: +12/-2
 TEST: N (IPC socket server — covered by clipboard/url-handling integration on CI host)
 COMPILE: ASSUMED — static-review verified (field declared; start() creates daemon pool; stop() calls shutdownNow())
 DATE: 2026-08-21
+---FILE: app/src/main/java/com/winlator/star/renderer/BaseRenderer.java
+ACTION: CREATED
+SUMMARY: Abstract base for HostRenderer impls; owns shared volatile state (surface size, fullscreen, magnifier, cursor/native mode, fps limit/window, unviewable WM classes, HUD tick) + trivial accessors
+LINES: +108/-0
+TEST: N
+COMPILE: Y (static review; no JDK on host)
+DATE: 2026-08-21
+---
+FILE: app/src/main/java/com/winlator/star/renderer/HostRenderer.java
+ACTION: MODIFIED
+SUMMARY: Added setHudFrameTick(IntConsumer), setNativeMode/isNativeMode, setWindowTexFilter to the interface per plan Phase 3 target contract
+LINES: +12/-1
+TEST: N
+COMPILE: Y (static review)
+DATE: 2026-08-21
+---
+FILE: app/src/main/java/com/winlator/star/renderer/effects/EffectPipeline.java
+ACTION: CREATED
+SUMMARY: Backend-agnostic effect-pipeline interface (addEffect/removeEffect/getEffect/isActive/render) per plan task 4
+LINES: +31/-0
+TEST: N
+COMPILE: Y (static review)
+DATE: 2026-08-21
+---
+FILE: app/src/main/java/com/winlator/star/renderer/EffectComposer.java
+ACTION: MODIFIED
+SUMMARY: EffectComposer now implements EffectPipeline (signatures already matched)
+LINES: +1/-1
+TEST: N
+COMPILE: Y (static review)
+DATE: 2026-08-21
+---
+FILE: app/src/main/java/com/winlator/star/renderer/GLRenderer.java
+ACTION: REFACTORED
+SUMMARY: Extends BaseRenderer; removed duplicated state/accessors; overrides keep side effects (requestRender on cursor/offset/zoom/filter changes, scanout retarget on setFpsLimit); added setWindowTexFilter
+LINES: +38/-44
+TEST: N
+COMPILE: Y (static review; brace-balanced)
+DATE: 2026-08-21
+---
+FILE: app/src/main/java/com/winlator/star/renderer/vulkan/VulkanRenderer.java
+ACTION: REFACTORED
+SUMMARY: Extends BaseRenderer; ctor preserves historical hidden-cursor default; overrides keep updateTransform/VRR-vote/native-push side effects; classicHudRef setFrameRating kept
+LINES: +30/-52
+TEST: N
+COMPILE: Y (static review; brace-balanced)
+DATE: 2026-08-21
+---
+FILE: app/src/main/java/com/winlator/star/renderer/ASurfaceRenderer.java
+ACTION: REFACTORED
+SUMMARY: Extends BaseRenderer; removed duplicated state/trivial accessors; keeps hudRef-backed setFrameRating and native cursor-visibility push in setCursorVisible override
+LINES: +14/-45
+TEST: N
+COMPILE: Y (static review; brace-balanced)
+DATE: 2026-08-21
 ---
