@@ -118,6 +118,7 @@ import com.winlator.star.reshade.ReshadeManager
 import com.winlator.star.ui.components.ColorPicker
 import com.winlator.star.ui.screens.MenuItemDivider
 import com.winlator.star.ui.screens.WatchdogSection
+import com.winlator.star.ui.screens.drawer.DrawerRail
 import com.winlator.star.ui.screens.outlinedMenuCard
 import com.winlator.star.ui.theme.LocalAccentDim
 import com.winlator.star.ui.theme.WinlatorTheme
@@ -153,7 +154,6 @@ fun XServerDrawer() {
     val isPaused by state.isPaused.collectAsState()
     val tvConnected by state.tvConnected.collectAsState()
     val castSupported by state.castSupported.collectAsState()
-    val pauseIcon = if (isPaused) R.drawable.icon_play else R.drawable.icon_pause
     val accent = MaterialTheme.colorScheme.primary
     val surface = MaterialTheme.colorScheme.surface
 
@@ -163,100 +163,19 @@ fun XServerDrawer() {
             .width(380.dp)
             .background(surface)
     ) {
-        BoxWithConstraints(
-            modifier = Modifier
-                .width(60.dp)
-                .fillMaxHeight()
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(surface, MaterialTheme.colorScheme.surface, surface),
-                        startY = 0f,
-                        endY = Float.POSITIVE_INFINITY
-                    )
-                ),
-        ) {
-            // The rail scrolls when the screen is too short to fit every icon
-            // (so the bottom Exit/Pause buttons stay reachable). When it does
-            // fit, heightIn(min) + SpaceEvenly reproduces the distributed look.
-            val railMinHeight = maxHeight
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState()),
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = railMinHeight)
-                        .padding(vertical = 8.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.SpaceEvenly,
-                ) {
-                    // Top group: section tabs
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        TabIconButton(R.drawable.icon_display, selectedTab == TabType.GRAPHICS) {
-                            handleTabClick(TabType.GRAPHICS, state)
-                        }
-                        Spacer(Modifier.height(6.dp))
-                        FpsTabButton(isSelected = selectedTab == TabType.HUD) {
-                            handleTabClick(TabType.HUD, state)
-                        }
-                        Spacer(Modifier.height(6.dp))
-                        TabIconButton(R.drawable.icon_screen_effect, selectedTab == TabType.RESHADE) {
-                            handleTabClick(TabType.RESHADE, state)
-                        }
-                        Spacer(Modifier.height(6.dp))
-                        TabIconButton(R.drawable.icon_input_controls, selectedTab == TabType.CONTROLS) {
-                            handleTabClick(TabType.CONTROLS, state)
-                        }
-                        Spacer(Modifier.height(6.dp))
-                        TabIconButton(R.drawable.icon_audio, selectedTab == TabType.AUDIO) {
-                            handleTabClick(TabType.AUDIO, state)
-                        }
-                        Spacer(Modifier.height(6.dp))
-                        TabIconButton(R.drawable.icon_debug, selectedTab == TabType.ADVANCED) {
-                            handleTabClick(TabType.ADVANCED, state)
-                        }
-                        // TV / Cast tab: shown while a TV is wired-connected OR wireless casting is
-                        // available (so the "Cast to a TV" button is always reachable). Gated behind
-                        // FeatureFlags.TV_OUTPUT_ENABLED so the whole tab disappears while the feature
-                        // is disabled (issue #339) — belt-and-braces on top of the controller/caster
-                        // never being constructed (which already leaves tvConnected/castSupported false).
-                        if (com.winlator.star.FeatureFlags.TV_OUTPUT_ENABLED && (tvConnected || castSupported)) {
-                            Spacer(Modifier.height(6.dp))
-                            TvTabButton(selectedTab == TabType.TV) {
-                                handleTabClick(TabType.TV, state)
-                            }
-                        }
-                    }
-
-                    // Bottom group: task manager / pause / exit
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Box(
-                            modifier = Modifier
-                                .width(36.dp)
-                                .height(2.dp)
-                                .background(accent, RoundedCornerShape(1.dp))
-                        )
-
-                        Spacer(Modifier.height(10.dp))
-
-                        TabIconButton(R.drawable.icon_task_manager, selectedTab == TabType.TASK_MANAGER) {
-                            state.selectTab(TabType.TASK_MANAGER)
-                            state.onTaskManager?.run()
-                        }
-                        Spacer(Modifier.height(6.dp))
-                        TabIconButton(pauseIcon, isSelected = false) {
-                            state.onPauseResume?.run(); state.onClose?.run()
-                        }
-                        Spacer(Modifier.height(6.dp))
-                        TabIconButton(R.drawable.icon_exit, isSelected = false) {
-                            state.onExit?.run()
-                        }
-                    }
-                }
-            }
-        }
+        DrawerRail(
+            selectedTab = selectedTab,
+            isPaused = isPaused,
+            tvConnected = tvConnected,
+            castSupported = castSupported,
+            onTabClick = { handleTabClick(it, state) },
+            onTaskManagerClick = {
+                state.selectTab(TabType.TASK_MANAGER)
+                state.onTaskManager?.run()
+            },
+            onPauseClick = { state.onPauseResume?.run(); state.onClose?.run() },
+            onExitClick = { state.onExit?.run() },
+        )
 
         // Accent seam between the tab rail and its content — mirrors the HUD's "Accent" outline
         // (full-height cyan), matching the prototype's rail/drawer divider.
@@ -589,134 +508,6 @@ private fun TvContent(state: XServerDrawerState) {
     }
 
     Spacer(Modifier.height(12.dp))
-}
-
-// ───── Modern Tab Button ─────
-
-@Composable
-private fun TabIconButton(iconRes: Int, isSelected: Boolean, onClick: () -> Unit) {
-    val accent = MaterialTheme.colorScheme.primary
-    val accentDim = LocalAccentDim.current
-    // Selected = filled accent pill (accent → dim), matching the rebuild preview.
-    val bgBrush = if (isSelected)
-        Brush.verticalGradient(listOf(accent, accentDim))
-    else
-        Brush.verticalGradient(listOf(Color.Transparent, Color.Transparent))
-
-    val borderColor = if (isSelected) accent.copy(alpha = 0.6f) else Color(0xFF333333)
-    val tintColor = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
-
-    Box(
-        modifier = Modifier
-            .size(44.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(bgBrush, RoundedCornerShape(12.dp))
-            .border(1.5.dp, borderColor, RoundedCornerShape(12.dp))
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        if (isSelected) {
-            Canvas(Modifier.size(44.dp)) {
-                drawCircle(
-                    brush = Brush.radialGradient(
-                        colors = listOf(accent.copy(alpha = 0.25f), Color.Transparent),
-                        radius = size.minDimension / 2f
-                    ),
-                    radius = size.minDimension / 2f
-                )
-            }
-        }
-        Icon(
-            painter = painterResource(iconRes),
-            contentDescription = null,
-            tint = tintColor,
-            modifier = Modifier.size(22.dp),
-        )
-    }
-}
-
-@Composable
-private fun FpsTabButton(isSelected: Boolean, onClick: () -> Unit) {
-    val accent = MaterialTheme.colorScheme.primary
-    val accentDim = LocalAccentDim.current
-    // Selected = filled accent pill (accent → dim), matching the rebuild preview.
-    val bgBrush = if (isSelected)
-        Brush.verticalGradient(listOf(accent, accentDim))
-    else
-        Brush.verticalGradient(listOf(Color.Transparent, Color.Transparent))
-
-    val borderColor = if (isSelected) accent.copy(alpha = 0.6f) else Color(0xFF333333)
-    val textColor = if (isSelected) Color.White else accent
-
-    Box(
-        modifier = Modifier
-            .size(44.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(bgBrush, RoundedCornerShape(12.dp))
-            .border(1.5.dp, borderColor, RoundedCornerShape(12.dp))
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        if (isSelected) {
-            Canvas(Modifier.size(44.dp)) {
-                drawCircle(
-                    brush = Brush.radialGradient(
-                        colors = listOf(accent.copy(alpha = 0.25f), Color.Transparent),
-                        radius = size.minDimension / 2f
-                    ),
-                    radius = size.minDimension / 2f
-                )
-            }
-        }
-        Text(
-            text = "FPS",
-            color = textColor,
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.Bold,
-        )
-    }
-}
-
-// TV tab: a text "TV" pill (mirrors the FPS tab) instead of an icon.
-@Composable
-private fun TvTabButton(isSelected: Boolean, onClick: () -> Unit) {
-    val accent = MaterialTheme.colorScheme.primary
-    val accentDim = LocalAccentDim.current
-    val bgBrush = if (isSelected)
-        Brush.verticalGradient(listOf(accent, accentDim))
-    else
-        Brush.verticalGradient(listOf(Color.Transparent, Color.Transparent))
-
-    val borderColor = if (isSelected) accent.copy(alpha = 0.6f) else Color(0xFF333333)
-    val textColor = if (isSelected) Color.White else accent
-
-    Box(
-        modifier = Modifier
-            .size(44.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(bgBrush, RoundedCornerShape(12.dp))
-            .border(1.5.dp, borderColor, RoundedCornerShape(12.dp))
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        if (isSelected) {
-            Canvas(Modifier.size(44.dp)) {
-                drawCircle(
-                    brush = Brush.radialGradient(
-                        colors = listOf(accent.copy(alpha = 0.25f), Color.Transparent),
-                        radius = size.minDimension / 2f
-                    ),
-                    radius = size.minDimension / 2f
-                )
-            }
-        }
-        Text(
-            text = "TV",
-            color = textColor,
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.Bold,
-        )
-    }
 }
 
 // ───── Section Header ─────

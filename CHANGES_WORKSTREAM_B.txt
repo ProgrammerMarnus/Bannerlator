@@ -1,0 +1,32 @@
+# CHANGES_WORKSTREAM_B.txt
+# Workstream B - UI/Compose layer: performance & structure
+# Branch: Workstream_B
+# Format per file change; append below.
+# NOTE: plan's 6-tab model (Graphics/Performance/Audio/Input/Overlay/About) does NOT exist
+# in this codebase. The real drawer drives 8 tabs: GRAPHICS, HUD, RESHADE, CONTROLS,
+# AUDIO, ADVANCED, TASK_MANAGER, TV (see XServerDrawerState.kt TabType). All work is the
+# faithful adaptation of the plan to the real code; deviations are documented inline.
+FILE: app/src/main/java/com/winlator/star/ui/screens/drawer/DrawerTab.kt
+ACTION: CREATED
+SUMMARY: B1.3 (adapted to real 8-tab codebase) - sealed-interface DrawerTab metadata (tabType + iconRes) for GRAPHICS/HUD/RESHADE/CONTROLS/AUDIO/ADVANCED/TV/TASK_MANAGER + topTabs order. Plan's fictional 6-tab/icon/string names IGNORED (they do not exist in this repo).
+LINES: +77/-0
+TEST: N
+COMPILE: N (no JDK/Android SDK in this env; symbol + brace-balance cross-check passed)
+DATE: 2026-08-22
+---
+FILE: app/src/main/java/com/winlator/star/ui/screens/drawer/DrawerRail.kt
+ACTION: CREATED
+SUMMARY: B1.1 (adapted) - 60dp left tab rail extracted verbatim from XServerDrawer.kt (BoxWithConstraints + scroll + SpaceEvenly), now driven by DrawerTab.topTabs; includes TabIconButton/FpsTabButton/TvTabButton moved with zero behavior change.
+LINES: +274/-0
+TEST: N
+COMPILE: N (no JDK/Android SDK in this env; bytecode brace-balance cross-check passed)
+DATE: 2026-08-22
+---
+FILE: app/src/main/java/com/winlator/star/ui/XServerDrawer.kt
+ACTION: MODIFIED
+SUMMARY: B1.11 (partial) - XServerDrawer() now delegates the rail to DrawerRail(...) with the same callbacks; removed inlined rail block (94 lines) and 3 moved button composables (128 lines). File: 4309 -> 4100 lines. Tab content dispatch (when) unchanged.
+LINES: +14/-223
+TEST: N
+COMPILE: N (no JDK/Android SDK in this env; symbol cross-check passed)
+DATE: 2026-08-22
+---
