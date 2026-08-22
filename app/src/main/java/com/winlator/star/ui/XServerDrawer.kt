@@ -119,6 +119,10 @@ import com.winlator.star.ui.components.ColorPicker
 import com.winlator.star.ui.screens.MenuItemDivider
 import com.winlator.star.ui.screens.WatchdogSection
 import com.winlator.star.ui.screens.drawer.DrawerRail
+import com.winlator.star.ui.screens.drawer.DrawerSectionHeader
+import com.winlator.star.ui.screens.drawer.DrawerToggleRow
+import com.winlator.star.ui.screens.drawer.DrawerLabeledSlider
+import com.winlator.star.ui.screens.drawer.DrawerAccentButton
 import com.winlator.star.ui.screens.outlinedMenuCard
 import com.winlator.star.ui.theme.LocalAccentDim
 import com.winlator.star.ui.theme.WinlatorTheme
@@ -510,66 +514,20 @@ private fun TvContent(state: XServerDrawerState) {
     Spacer(Modifier.height(12.dp))
 }
 
-// ───── Section Header ─────
+// ───── Shared drawer primitives ─────
+// Extracted to ui/screens/drawer/DrawerComponents.kt. These thin, same-signature
+// @Composable wrappers keep every existing call site (Graphics/HUD/ReShade/Controls/
+// Advanced/Task Manager/TV tabs) untouched while the real bodies live elsewhere.
 
 @Composable
 private fun SectionHeader(title: String) {
-    val accent = MaterialTheme.colorScheme.primary
-    Column(modifier = Modifier.padding(bottom = 10.dp)) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleSmall.copy(fontSize = 15.sp, fontWeight = FontWeight.Bold),
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-        Spacer(Modifier.height(4.dp))
-        Box(
-            modifier = Modifier
-                .fillMaxWidth(0.4f)
-                .height(2.dp)
-                .background(
-                    Brush.horizontalGradient(listOf(accent, accent.copy(alpha = 0.1f))),
-                    RoundedCornerShape(1.dp)
-                )
-        )
-    }
+    DrawerSectionHeader(title)
 }
-
-// ───── Modern Toggle Row ─────
 
 @Composable
 private fun ToggleRow(label: String, checked: Boolean, enabled: Boolean = true, onCheckedChange: (Boolean) -> Unit) {
-    val accent = MaterialTheme.colorScheme.primary
-    val accentDim = LocalAccentDim.current
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(MaterialTheme.colorScheme.surface)
-            .then(if (enabled) Modifier.clickable { onCheckedChange(!checked) } else Modifier.alpha(0.4f))
-            .padding(horizontal = 12.dp, vertical = 10.dp)
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.weight(1f)
-        )
-        Switch(
-            checked = checked,
-            onCheckedChange = onCheckedChange,
-            enabled = enabled,
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = accent,
-                checkedTrackColor = accentDim,
-                uncheckedThumbColor = ToggleThumbOff,
-                uncheckedTrackColor = ToggleTrackOff,
-            )
-        )
-    }
+    DrawerToggleRow(label, checked, enabled, onCheckedChange)
 }
-
-// ───── Modern Slider Row ─────
 
 @Composable
 private fun LabeledSlider(
@@ -582,60 +540,12 @@ private fun LabeledSlider(
     enabled: Boolean = true,
     format: (Float) -> String = { "%.0f".format(it) }
 ) {
-    val accent = MaterialTheme.colorScheme.primary
-    Column(modifier = Modifier.padding(vertical = 4.dp).then(if (enabled) Modifier else Modifier.alpha(0.4f))) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            Text(
-                text = format(value),
-                style = MaterialTheme.typography.bodySmall,
-                color = accent,
-                fontWeight = FontWeight.Medium
-            )
-        }
-        Slider(
-            value = value,
-            onValueChange = onValueChange,
-            onValueChangeFinished = onValueChangeFinished ?: {},
-            valueRange = valueRange,
-            steps = steps,
-            enabled = enabled,
-            colors = SliderDefaults.colors(
-                thumbColor = accent,
-                activeTrackColor = accent,
-                inactiveTrackColor = ToggleTrackOff,
-                activeTickColor = Color.Transparent,
-                inactiveTickColor = Color.Transparent,
-            ),
-            modifier = Modifier.fillMaxWidth()
-        )
-    }
+    DrawerLabeledSlider(label, value, valueRange, onValueChange, onValueChangeFinished, steps, enabled, format)
 }
-
-// ───── Modern Accent Button ─────
 
 @Composable
 private fun AccentButton(text: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    val accentDim = LocalAccentDim.current
-    Button(
-        onClick = onClick,
-        modifier = modifier.fillMaxWidth().height(42.dp),
-        shape = RoundedCornerShape(10.dp),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = accentDim,
-            contentColor = Color.White
-        )
-    ) {
-        Text(text, fontWeight = FontWeight.SemiBold)
-    }
+    DrawerAccentButton(text, modifier, onClick)
 }
 
 // ───── Graphics Tab ─────

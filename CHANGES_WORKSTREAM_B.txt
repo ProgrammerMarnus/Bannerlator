@@ -29,4 +29,35 @@ LINES: +14/-223
 TEST: N
 COMPILE: N (no JDK/Android SDK in this env; symbol cross-check passed)
 DATE: 2026-08-22
+---FILE: app/src/main/java/com/winlator/star/ui/screens/drawer/DrawerComponents.kt
+ACTION: CREATED
+SUMMARY: Shared drawer primitives (SectionHeader, ToggleRow, LabeledSlider, AccentButton) extracted verbatim from XServerDrawer.kt as internal DrawerSectionHeader/DrawerToggleRow/DrawerLabeledSlider/DrawerAccentButton. Self-contained (local ToggleTrackOff/ToggleThumbOff constants), no XServerDrawerState coupling.
+LINES: +174/-0
+TEST: N
+COMPILE: N (no JDK/Android SDK in this env; symbol + brace-balance cross-check passed)
+DATE: 2026-08-22
+---
+FILE: app/src/main/java/com/winlator/star/ui/XServerDrawer.kt
+ACTION: MODIFIED
+SUMMARY: Replaced the four large private helper bodies (SectionHeader/ToggleRow/LabeledSlider/AccentButton, 111 lines) with thin same-signature @Composable passthrough wrappers calling the new DrawerXxx primitives; added 4 imports. Zero call-site change (78 references preserved). File 4100 -> 4010 lines.
+LINES: +12/-102
+TEST: N
+COMPILE: N (no JDK/Android SDK in this env; symbol + brace-balance cross-check passed)
+DATE: 2026-08-22
+---
+FILE: app/src/main/java/com/winlator/star/ui/screens/drawer/DrawerComponents.kt
+ACTION: CREATED
+SUMMARY: Shared drawer primitives (SectionHeader, ToggleRow, LabeledSlider, AccentButton) extracted verbatim from XServerDrawer.kt as internal DrawerSectionHeader/DrawerToggleRow/DrawerLabeledSlider/DrawerAccentButton. Self-contained (local ToggleTrackOff/ToggleThumbOff constants), no XServerDrawerState coupling.
+LINES: +174/-0
+TEST: N
+COMPILE: N (no JDK/Android SDK; symbol + brace-balance cross-check passed)
+DATE: 2026-08-22
+---
+FILE: app/src/main/java/com/winlator/star/ui/XServerDrawer.kt
+ACTION: MODIFIED
+SUMMARY: Replaced four large private helpers with thin same-signature @Composable passthrough wrappers calling new DrawerXxx primitives; added 4 imports. Zero call-site change (78 references preserved). File 4100 -> 4010 lines.
+LINES: +12/-102
+TEST: N
+COMPILE: N (no JDK/Android SDK; symbol + brace-balance cross-check passed)
+DATE: 2026-08-22
 ---
