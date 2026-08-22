@@ -10,10 +10,22 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 public abstract class HttpUtils {
+    /**
+     * Shared background I/O executor. A single daemon thread instead of a throwaway
+     * {@code Executors.newSingleThreadExecutor()} per HTTP call — the old pattern spun up (and leaked)
+     * one non-daemon thread every time download/post/postWithStatus was called. Sequential ordering
+     * is fine; HTTP calls are independent and never depend on interleaving.
+     */
+    private static final ExecutorService IO_EXECUTOR =
+            Executors.newSingleThreadExecutor(r -> {
+                Thread t = new Thread(r, "http-utils-io");
+                t.setDaemon(true);
+                return t;
+            });
     private static void downloadAsync(String url, Callback<String> onDownloadComplete) {
         try {
             HttpURLConnection connection = (HttpURLConnection)(new URL(url)).openConnection();
@@ -36,7 +48,7 @@ public abstract class HttpUtils {
     }
 
     public static void download(final String url, final Callback<String> onDownloadComplete) {
-        Executors.newSingleThreadExecutor().execute(() -> downloadAsync(url, onDownloadComplete));
+        IO_EXECUTOR.execute(() -> downloadAsync(url, onDownloadComplete));
     }
 
     private static void postAsync(String url, String jsonBody, Callback<String> onComplete) {
@@ -70,7 +82,7 @@ public abstract class HttpUtils {
 
     /** POST a JSON body (Content-Type: application/json); the callback receives the response body or null. */
     public static void post(final String url, final String jsonBody, final Callback<String> onComplete) {
-        Executors.newSingleThreadExecutor().execute(() -> postAsync(url, jsonBody, onComplete));
+        IO_EXECUTOR.execute(() -> postAsync(url, jsonBody, onComplete));
     }
 
     /**
@@ -120,7 +132,7 @@ public abstract class HttpUtils {
      * caller can read a typed {@code {error}} on a rejection. Runs off the calling thread.
      */
     public static void postWithStatus(final String url, final String jsonBody, final Callback<HttpResponse> onComplete) {
-        Executors.newSingleThreadExecutor().execute(() -> postWithStatusAsync(url, jsonBody, onComplete));
+        IO_EXECUTOR.execute(() -> postWithStatusAsync(url, jsonBody, onComplete));
     }
 
     private static void downloadAsync(String url, File destination, AtomicBoolean interruptRef, Callback<Integer> onPublishProgress, Callback<Boolean> onDownloadComplete) {
@@ -161,7 +173,7 @@ public abstract class HttpUtils {
         final DownloadProgressDialog dialog = new DownloadProgressDialog(activity);
         final AtomicBoolean interruptRef = new AtomicBoolean();
         dialog.show(() -> interruptRef.set(true));
-        Executors.newSingleThreadExecutor().execute(() -> {
+        IO_EXECUTOR.execute(() -> {
             downloadAsync(url, destination, interruptRef, (progress) -> {
                 activity.runOnUiThread(() -> {
                     dialog.setProgress(progress);

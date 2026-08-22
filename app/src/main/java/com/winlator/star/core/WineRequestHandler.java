@@ -27,13 +27,18 @@ public class WineRequestHandler {
 
     private Context context;
     private ServerSocket serverSocket;
+    private ExecutorService executor;
 
     public WineRequestHandler(Context context) {
         this.context = context;
     }
 
     public void start() {
-        ExecutorService executor = Executors.newSingleThreadExecutor();
+        executor = Executors.newSingleThreadExecutor(r -> {
+            Thread t = new Thread(r, "wine-request-handler");
+            t.setDaemon(true);
+            return t;
+        });
         executor.execute(() -> {
             try {
                 serverSocket = new ServerSocket(20000);
@@ -55,6 +60,10 @@ public class WineRequestHandler {
                 serverSocket.close();
             } catch (IOException e) {
             }
+        }
+        if (executor != null) {
+            executor.shutdownNow();
+            executor = null;
         }
     }
 

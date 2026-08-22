@@ -14,9 +14,22 @@ import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public abstract class ProcessHelper {
+    /**
+     * Shared background worker for process debug/stream monitoring. A single daemon thread instead of
+     * a throwaway {@code Executors.newSingleThreadExecutor()} per call — the old pattern in
+     * createDebugThread/createWaitForThread spun up (and leaked) one non-daemon thread each time.
+     */
+    private static final ExecutorService IO_EXECUTOR =
+            Executors.newSingleThreadExecutor(r -> {
+                Thread t = new Thread(r, "process-helper-io");
+                t.setDaemon(true);
+                return t;
+            });
+
     public static final boolean PRINT_DEBUG = true; // FIXME change to false
     private static final ArrayList<Callback<String>> debugCallbacks = new ArrayList<>();
     private static final byte SIGCONT = 18;
@@ -229,7 +242,7 @@ public abstract class ProcessHelper {
     }
 
     private static void createDebugThread(final InputStream inputStream) {
-        Executors.newSingleThreadExecutor().execute(() -> {
+        IO_EXECUTOR.execute(() -> {
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream))) {
                 String line;
                 while ((line = reader.readLine()) != null) {
@@ -248,7 +261,7 @@ public abstract class ProcessHelper {
     }
 
     private static void createWaitForThread(java.lang.Process process, final Callback<Integer> terminationCallback) {
-        Executors.newSingleThreadExecutor().execute(new Runnable() {
+        IO_EXECUTOR.execute(new Runnable() {
             @Override
             public void run() {
                 try {

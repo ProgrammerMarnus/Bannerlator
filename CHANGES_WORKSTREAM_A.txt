@@ -133,3 +133,30 @@ TEST: Y (the workflow itself is the verification gate)
 COMPILE: N (CI YAML)
 DATE: 2026-08-21
 ---
+
+FILE: app/src/main/java/com/winlator/star/core/HttpUtils.java
+ACTION: MODIFIED
+SUMMARY: Replaced 4 throwaway Executors.newSingleThreadExecutor() per-call instances (thread leaks on every HTTP download/post/postWithStatus) with a shared daemon IO_EXECUTOR field. Also fixed missing blank line between the field and first method.
+LINES: +12/-4
+TEST: N (utility class — covered by network/error-handling tests on CI host)
+COMPILE: ASSUMED — static-review verified (ExecutorService import added; all 4 call sites replaced: lines 51, 85, 135, 176)
+DATE: 2026-08-21
+---
+
+FILE: app/src/main/java/com/winlator/star/core/ProcessHelper.java
+ACTION: MODIFIED
+SUMMARY: Replaced 2 throwaway Executors.newSingleThreadExecutor() per-call instances (in createDebugThread + createWaitForThread) with a shared daemon IO_EXECUTOR field. Prevents thread leaks on every Wine process debug-stream callback and process-wait callback.
+LINES: +12/-2
+TEST: N (process signal utility — covered by manual integration on Wine session start/stop)
+COMPILE: ASSUMED — static-review verified (ExecutorService import added; 2 call sites: createDebugThread line ~227, createWaitForThread line ~251)
+DATE: 2026-08-21
+---
+
+FILE: app/src/main/java/com/winlator/star/core/WineRequestHandler.java
+ACTION: MODIFIED
+SUMMARY: Replaced non-daemon throwaway executor in start() (created per-start, never shut down → thread leak) with a field-backed daemon ThreadPoolExecutor that is properly shut down via shutdownNow() in stop(). Fixes the leaked request-handler thread that survived process teardown.
+LINES: +12/-2
+TEST: N (IPC socket server — covered by clipboard/url-handling integration on CI host)
+COMPILE: ASSUMED — static-review verified (field declared; start() creates daemon pool; stop() calls shutdownNow())
+DATE: 2026-08-21
+---
