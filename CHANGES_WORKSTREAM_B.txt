@@ -80,3 +80,19 @@ TEST: N
 COMPILE: N (no JDK/Android SDK; symbol + brace-balance 0,0,0 cross-check passed)
 DATE: 2026-08-22
 ---
+FILE: app/src/main/java/com/winlator/star/ui/screens/drawer/TaskManagerTab.kt
+ACTION: CREATED
+SUMMARY: Full Task Manager tab extracted verbatim from XServerDrawer.kt (TmContent cluster: TaskManagerTab entry + TmProcessRow + ProcessorAffinityDialog + AffinityCheckRow + TmSectionLabel + TmStatGrid + StatTile + TmCoreStrip + CorePanel + TmContainerPanel + ContainerInfoRow + TmTile). Self-contained; binds only to XServerDialogState flows/callbacks + shared Drawer* helpers (same pkg).
+LINES: +649/-0
+TEST: N
+COMPILE: N (no JDK/Android SDK; symbol + brace-balance 0,0,0 cross-check passed; all XServerDialogState fields & R.drawable.taskmgr_process confirmed present)
+DATE: 2026-08-22
+---
+FILE: app/src/main/java/com/winlator/star/ui/XServerDrawer.kt
+ACTION: MODIFIED
+SUMMARY: Removed the ~582-line Task Manager cluster + section comment; dispatch now calls TaskManagerTab(). Added import. File 3906 -> 3321 lines (4309 at Phase-1 start). No leftover Tm refs.
+LINES: +2/-588
+TEST: N
+COMPILE: N (no JDK/Android SDK; brace-balance 0,0,0 cross-check passed)
+DATE: 2026-08-22
+---
