@@ -123,3 +123,21 @@ TEST: N
 COMPILE: N (no JDK/Android SDK; brace-balance cross-check pending)
 DATE: 2026-08-22
 ---
+
+FILE: app/src/main/java/com/winlator/star/ui/screens/drawer/AdvancedTab.kt
+ACTION: CREATED
+SUMMARY: Advanced tab extracted from XServerDrawer.kt (AdvancedContent cluster): entry composable (5 quick-launch rows + non-root Performance toggles + reset-all-overrides) + PerfOverrideLine + GpuClockLockRow + RootPerformanceSection (root tier + memory actions + WatchdogSection) + RootToggleRow + AdvancedActionRow. SectionHeader/ToggleRow -> Drawer* variants. Binds XServerDrawerState + RootManager/PerfRevertRegistry/PerfRootApplier/PerfGpuTurbo.
+LINES: +301/-0
+TEST: N
+COMPILE: N (no JDK/Android SDK; brace-balance 40/40 verified)
+DATE: 2026-08-22
+---
+
+FILE: app/src/main/java/com/winlator/star/ui/XServerDrawer.kt
+ACTION: MODIFIED
+SUMMARY: Removed Advanced tab cluster (6 composables, ~260 lines) + dead prettyDxWrapper/prettyRenderer/tidyDevice wrappers (zero call sites since TaskManager extraction). Dispatch now calls AdvancedTab(state). Removed 5 now-unused imports (perf.* + WatchdogSection); added AdvancedTab import. File 2528 -> 2254 lines (4309 at Phase-1 start).
+LINES: +1/-275
+TEST: N
+COMPILE: N (no JDK/Android SDK; brace-balance 535/535 verified; no leftover cluster refs)
+DATE: 2026-08-22
+---
