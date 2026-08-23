@@ -141,3 +141,21 @@ TEST: N
 COMPILE: N (no JDK/Android SDK; brace-balance 535/535 verified; no leftover cluster refs)
 DATE: 2026-08-22
 ---
+
+FILE: app/src/main/java/com/winlator/star/ui/screens/drawer/AudioTab.kt
+ACTION: CREATED
+SUMMARY: Audio tab extracted from XServerDrawer.kt (AudioContent, ~52 lines): preset/fine-tuning entry via components.AudioSettingsDialog with live apply (onReapplyAudio) + Reset audio. AccentButton -> DrawerAccentButton; fully-qualified component calls converted to imports. Self-contained.
+LINES: +78/-0
+TEST: N
+COMPILE: N (no JDK/Android SDK; brace-balance 10/10 verified)
+DATE: 2026-08-22
+---
+
+FILE: app/src/main/java/com/winlator/star/ui/XServerDrawer.kt
+ACTION: MODIFIED
+SUMMARY: Removed AudioContent + its comment lines from under the TV section header. Dispatch now calls AudioTab(state); added AudioTab import. File 2254 -> 2200 lines (4309 at Phase-1 start, -48.9%). TV scoping note: TvContent depends on ReshadeDropdown/PresentModeSection/FrameGenSection/FullscreenModeButtons/UpscalerModeButtons — TV extraction deferred until those clusters land.
+LINES: +1/-55
+TEST: N
+COMPILE: N (no JDK/Android SDK; brace-balance 525/525 verified; no AudioContent refs remain)
+DATE: 2026-08-22
+---
