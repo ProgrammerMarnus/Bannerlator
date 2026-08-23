@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
@@ -25,7 +26,13 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,10 +43,13 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.winlator.star.R
+import com.winlator.star.ui.XServerDialogState
 import com.winlator.star.ui.theme.LocalAccentDim
 import kotlin.math.roundToInt
 
@@ -442,4 +452,355 @@ internal fun DrawerToggleChipGrid(items: List<DrawerToggleChipItem>, perRow: Int
         }
     }
 }
+// ───── Mode-button rows shared by Graphics + TV (relocated from XServerDrawer.kt) ─────
+
+// Terminal debanding (TPDF dither) — kills 8-bit gradient banding. Drawer-only / session-live.
+// Shared by the GL and Vulkan graphics blocks. Reads/writes the single _debandEnabled/_debandStrength
+// state and fires onDebandApply; only one renderer block is shown per session, so the
+// shared state never conflicts. strength 0..200 (CPU maps /100 to LSBs, default 100 = 1 LSB).
+@Composable
+internal fun DrawerDebandControls(enabled: Boolean = true) {
+    val initDebandEnabled  by XServerDialogState.debandEnabled.collectAsState()
+    val initDebandStrength by XServerDialogState.debandStrength.collectAsState()
+    var debandEnabled  by remember(initDebandEnabled)  { mutableStateOf(initDebandEnabled) }
+    var debandStrength by remember(initDebandStrength) { mutableIntStateOf(initDebandStrength) }
+    DrawerToggleRow("Debanding", debandEnabled, enabled) {
+        debandEnabled = it
+        XServerDialogState.onDebandApply?.invoke(debandEnabled, debandStrength)
+    }
+    if (debandEnabled) {
+        Spacer(Modifier.height(4.dp))
+        DrawerIntSlider("Dither strength", debandStrength, 0..200,
+            onValueChange = { debandStrength = it },
+            onValueChangeFinished = {
+                XServerDialogState.onDebandApply?.invoke(debandEnabled, debandStrength)
+            },
+            enabled = enabled)
+    }
+}
+
+// Fullscreen aspect-ratio selector (#71 Stage 2): 5 mode chips laid out as rows (3 + 2), same
+// box-chip idiom as DrawerUpscalerModeButtons. Selecting a mode applies it live and does NOT close the
+// drawer, so the user can flip between modes and settle on one before dismissing.
+@Composable
+internal fun DrawerFullscreenModeButtons(selected: Int, onSelect: (Int) -> Unit) {
+    val accent = MaterialTheme.colorScheme.primary
+    val accentDim = LocalAccentDim.current
+    val options = listOf(
+        0 to stringResource(R.string.fullscreen_mode_off_short),
+        1 to stringResource(R.string.fullscreen_mode_fit_short),
+        2 to stringResource(R.string.fullscreen_mode_stretch_short),
+        3 to stringResource(R.string.fullscreen_mode_fill_short),
+        4 to stringResource(R.string.fullscreen_mode_integer_short)
+    )
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        options.chunked(3).forEach { row ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                row.forEach { (mode, label) ->
+                    val isSel = selected == mode
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (isSel) accent else Color.Black)
+                            .border(
+                                width = 1.dp,
+                                color = if (isSel) accent else accentDim,
+                                shape = RoundedCornerShape(8.dp)
+                            )
+                            .clickable { onSelect(mode) }
+                            .padding(vertical = 9.dp)
+                    ) {
+                        Text(
+                            label,
+                            color = if (isSel) Color.Black else accent,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold.takeIf { isSel } ?: FontWeight.Medium
+                        )
+                    }
+                }
+                // Pad the short (2-chip) row so its buttons keep the same width as the 3-chip row.
+                repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun DrawerUpscalerModeButtons(selected: Int, enabled: Boolean, onSelect: (Int) -> Unit) {
+    val accent = MaterialTheme.colorScheme.primary
+    val accentDim = LocalAccentDim.current
+    val options = listOf(
+        0 to "None", 1 to "Linear", 2 to "Nearest",
+        3 to "SGSR", 4 to "FSR", 5 to "FSR (Fit)", 6 to "Sharpen", 7 to "NIS"
+    )
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        options.chunked(4).forEach { row ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                row.forEach { (mode, label) ->
+                    val isSel = selected == mode
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (isSel && enabled) accent else Color.Black)
+                            .border(
+                                width = 1.dp,
+                                color = if (isSel && enabled) accent else accentDim,
+                                shape = RoundedCornerShape(8.dp)
+                            )
+                            .clickable(enabled = enabled) { onSelect(mode) }
+                            .padding(vertical = 9.dp)
+                    ) {
+                        Text(
+                            label,
+                            color = when {
+                                !enabled -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                                isSel    -> Color.Black
+                                else     -> accent
+                            },
+                            fontSize = 12.sp,
+                            fontWeight = if (isSel && enabled) FontWeight.Bold else FontWeight.Medium
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+}
+// ───── Frame Generation section (shared by GraphicsTab + TV; relocated from XServerDrawer.kt) ─────
+// On/off is per-container; multiplier & flow scale are tuned live here and hot-reload
+// via conf.toml. Multiplier is a segmented button row; the Flow Scale slider collapses
+// while Off and expands when a multiplier is selected.
+@Composable
+internal fun DrawerFrameGenSection(state: XServerDrawerState) {
+    val accent = MaterialTheme.colorScheme.primary
+    val frameGenEnabled by state.frameGenEnabled.collectAsState()
+    val initFgMult by state.frameGenMultiplier.collectAsState()
+    val initFgFlow by state.frameGenFlowScale.collectAsState()
+    val initFgModel by state.frameGenModel.collectAsState()
+    val engine by state.frameGenEngine.collectAsState()
+    val layerActive by state.bionicFgActive.collectAsState()
+    val initLsfgPerf by state.lsfgPerformanceMode.collectAsState()
+
+    // Title on the left, engine badge on the right (green dot = engine actually running this
+    // session). Badge shows bionic-fg / lsfg-vk depending on the container's selection.
+    val engineLabel = when (engine) {
+        "lsfg"   -> "lsfg-vk"
+        "bionic" -> "win-fg"
+        else     -> "Off"
+    }
+    // Green dot = engine actually multiplying frames right now. Frame gen starts at multiplier 0
+    // (Off) every launch even when the container has an engine selected, so gate on initFgMult too
+    // — otherwise the dot would show green while FG is idle. Tracks live as the user toggles Off/2×/…
+    val isRunning = layerActive && engine != "off" && initFgMult > 0
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text("Frame Generation", color = accent, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .clip(RoundedCornerShape(10.dp))
+                .background(Color(0xFF1A1A1A))
+                .padding(horizontal = 8.dp, vertical = 3.dp)
+        ) {
+            Box(
+                Modifier
+                    .size(7.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(if (isRunning) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f))
+            )
+            Spacer(Modifier.width(5.dp))
+            Text(
+                engineLabel,
+                color = if (isRunning) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium
+            )
+        }
+    }
+    Spacer(Modifier.height(8.dp))
+
+    if (frameGenEnabled) {
+        var fgMult by remember(initFgMult) { mutableIntStateOf(initFgMult) }
+        var fgFlow by remember(initFgFlow) { mutableFloatStateOf(initFgFlow) }
+        var fgModel by remember(initFgModel) { mutableIntStateOf(initFgModel) }
+        fun applyFg() {
+            state.setFrameGenMultiplier(fgMult)
+            state.setFrameGenFlowScale(fgFlow)
+            state.setFrameGenModel(fgModel)
+            state.onBionicFgConfigChange?.run()
+        }
+
+        DrawerFgMultiplierButtons(fgMult, engine) { newMult ->
+            val wasOff = fgMult == 0
+            fgMult = newMult; applyFg()
+            // Turning FG on: pulse a bg/fg reset so win-fg starts clean, not artifacty.
+            if (wasOff && newMult >= 2) state.onFgResetPulse?.run()
+        }
+
+        // Interpolation model, win-fg only. The layer rebuilds its framegen context when the
+        // model changes (same path as a multiplier change), so this switches live. Hidden while
+        // frame gen is Off, where it would have nothing to act on.
+        AnimatedVisibility(
+            visible = engine == "bionic" && fgMult > 0,
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut()
+        ) {
+            Column {
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    "Model",
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(start = 4.dp, bottom = 6.dp)
+                )
+                DrawerFgModelButtons(fgModel) { newModel ->
+                    fgModel = newModel; applyFg()
+                    // Model switch while FG is on -> same bg/fg reset pulse.
+                    if (fgMult >= 2) state.onFgResetPulse?.run()
+                }
+            }
+        }
+
+        // Flow Scale only matters with frame gen actually on -> collapse it while Off.
+        AnimatedVisibility(
+            visible = fgMult > 0,
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut()
+        ) {
+            Column {
+                Spacer(Modifier.height(8.dp))
+                DrawerLabeledSlider(
+                    "Flow Scale", fgFlow, 0.2f..1.0f,
+                    { fgFlow = it }, { applyFg() },
+                    format = { "%.2f".format(it) }
+                )
+                Text(
+                    "Higher flow scale = smoother motion estimate, more GPU cost.",
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(start = 4.dp, top = 2.dp)
+                )
+            }
+        }
+
+        // lsfg-vk only: performance_mode (bionic-fg has no such setting).
+        if (engine == "lsfg") {
+            var lsfgPerf by remember(initLsfgPerf) { mutableStateOf(initLsfgPerf) }
+            Spacer(Modifier.height(8.dp))
+            DrawerToggleRow("Performance mode", lsfgPerf) {
+                lsfgPerf = it
+                state.setLsfgPerformanceMode(it)
+                applyFg()
+            }
+            Text(
+                "Lower quality for higher FPS — helps on low-end devices.",
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                fontSize = 11.sp,
+                modifier = Modifier.padding(start = 4.dp, top = 2.dp)
+            )
+        }
+    } else {
+        Text(
+            "Enable Frame Generation in this container's settings to tune it here.",
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+            fontSize = 11.sp,
+            modifier = Modifier.padding(start = 4.dp, top = 2.dp)
+        )
+    }
+}
+
+// Off / 2× / 3× / 4× segmented button row. mult values 0/2/3/4; selected = filled accent.
+@Composable
+internal fun DrawerFgModelButtons(selected: Int, onSelect: (Int) -> Unit) {
+    val accent = MaterialTheme.colorScheme.primary
+    val accentDim = LocalAccentDim.current
+    // win-fg's two optical-flow models: 3 = single-direction flow, 4 = block-grid
+    // bidirectional flow with occlusion gating (softer at occlusion edges). Legacy
+    // stored values 0-2 map to the standard flow (model 3), matching the layer's clamp.
+    val options = listOf(3 to "Optical flow", 4 to "Bidirectional")
+    val sel = if (selected < 3) 3 else selected
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        options.forEach { (model, label) ->
+            val isSel = sel == model
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(if (isSel) accent else Color.Black)
+                    .border(
+                        width = 1.dp,
+                        color = if (isSel) accent else accentDim,
+                        shape = RoundedCornerShape(8.dp)
+                    )
+                    .clickable { onSelect(model) }
+                    .padding(vertical = 9.dp)
+            ) {
+                Text(
+                    label,
+                    color = if (isSel) Color.Black else accent,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        }
+    }
+}
+
+@Composable
+internal fun DrawerFgMultiplierButtons(selected: Int, engine: String, onSelect: (Int) -> Unit) {
+    val accent = MaterialTheme.colorScheme.primary
+    val accentDim = LocalAccentDim.current
+    // win-fg is a simple Off / On toggle for now (On = 2×); selecting On reveals the
+    // model + flow-scale controls (gated on multiplier > 0). lsfg-vk keeps 2×/3×/4×.
+    val options = if (engine == "bionic")
+        listOf(0 to "Off", 2 to "On")
+    else
+        listOf(0 to "Off", 2 to "2×", 3 to "3×", 4 to "4×")
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        options.forEach { (mult, label) ->
+            val isSel = selected == mult
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(if (isSel) accent else Color.Black)
+                    .border(
+                        width = 1.dp,
+                        color = if (isSel) accent else accentDim,
+                        shape = RoundedCornerShape(8.dp)
+                    )
+                    .clickable { onSelect(mult) }
+                    .padding(vertical = 9.dp)
+            ) {
+                Text(
+                    label,
+                    color = if (isSel) Color.Black else accent,
+                    fontSize = 13.sp,
+                    fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium
+                )
+            }
+        }
+    }
 }
