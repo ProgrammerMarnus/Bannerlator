@@ -68,6 +68,49 @@ jobs:
         echo "VERSION=$(grep versionName app/build.gradle | head -1 | cut -d '"' -f 2)" >> $GITHUB_ENV
         echo "BUILD_DATE=$(date +'%Y%m%d')" >> $GITHUB_ENV
 
+    - name: Verify versionCode was bumped
+      # Phase-5 gate: versionCode lives hardcoded in app/build.gradle and UpdateManager only offers
+      # an update when update.json's versionCode > the INSTALLED BuildConfig.VERSION_CODE — both
+      # derive from that one literal. Forgetting the bump ships a release NO installed user is ever
+      # offered (silent no-op). Compare against the last published update.json; hard-fail STABLE
+      # cuts that didn't move. Pre-releases never touch update.json (make_latest=false), so they
+      # only warn. First-ever release (no previous asset) skips. Fetch failures warn-and-skip
+      # rather than blocking a deliberate manual release on a transient API hiccup.
+      env:
+        GH_TOKEN: ${{ github.token }}
+        MAKE_LATEST: ${{ inputs.make_prerelease }}
+        RELEASE_NUM: ${{ inputs.release_number }}
+      run: |
+        if [ "$VERSION" != "$RELEASE_NUM" ]; then
+          echo "::warning::release_number ('$RELEASE_NUM') differs from manifest versionName ('$VERSION') — cosmetic, but keep naming intentional."
+        fi
+        PREV_DIR=$(mktemp -d)
+        # Recompute here: the later update.json step defines its own VERSION_CODE; this gate must
+        # not depend on step ordering.
+        VERSION_CODE=$(grep versionCode app/build.gradle | head -1 | grep -oE '[0-9]+' | head -1)
+        if [ -z "$VERSION_CODE" ]; then
+          echo "::error::Could not parse versionCode from app/build.gradle."
+          exit 1
+        fi
+        if gh release download --repo "$GITHUB_REPOSITORY" --pattern 'update.json' --dir "$PREV_DIR" 2>/dev/null && [ -s "$PREV_DIR/update.json" ]; then
+          PREV_VC=$(jq -r '.versionCode // 0' "$PREV_DIR/update.json")
+          if [ "$MAKE_LATEST" != "true" ]; then
+            echo "Pre-release cut (update.json left pointing at last stable): prev stable versionCode=$PREV_VC, building $VERSION_CODE"
+            if [ "$VERSION_CODE" -le "$PREV_VC" ]; then
+              echo "::warning::pre-release versionCode ($VERSION_CODE) is not above the last stable ($PREV_VC). Remember to bump before promoting to stable."
+            fi
+          elif [ "$VERSION_CODE" -le "$PREV_VC" ]; then
+            echo "::error::versionCode NOT bumped: this build=$VERSION_CODE, latest published release=$PREV_VC."
+            echo "::error::UpdateManager offers nothing when update.json versionCode <= installed versionCode, so this stable release would be invisible to users."
+            echo "::error::Bump 'versionCode NNN' in app/build.gradle and re-run this workflow."
+            exit 1
+          else
+            echo "OK: versionCode $PREV_VC -> $VERSION_CODE"
+          fi
+        else
+          echo "::warning::No previous update.json found — versionCode-bump check skipped (first release?)."
+        fi
+
     - name: Generate update.json
       # Drives the in-app updater (UpdateManager). The app fetches this from
       # releases/latest/download/update.json; because make_latest=true +

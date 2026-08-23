@@ -255,3 +255,11 @@ TEST: Y
 COMPILE: Y (static review)
 DATE: 2026-08-21
 ---
+FILE: .github/workflows/release.yml
+ACTION: MODIFIED
+SUMMARY: Phase-5 versionCode-bump gate — compares this build against the last published update.json; hard-fails STABLE cuts that did not bump (updater is invisible otherwise per UpdateManager.isNewer), warns on prereleases/first release/fetch failure
+LINES: +46/-0
+TEST: Y (branch-simulated locally: FAIL/PASS/WARN/SKIP all correct; YAML validated)
+COMPILE: N/A (workflow YAML)
+DATE: 2026-08-21
+---
