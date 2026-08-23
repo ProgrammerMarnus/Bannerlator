@@ -215,3 +215,43 @@ TEST: N
 COMPILE: Y (static review; brace-balanced)
 DATE: 2026-08-21
 ---
+FILE: app/src/main/java/com/winlator/star/perf/PerfRevertRegistry.kt
+ACTION: MODIFIED
+SUMMARY: Atomic snapshot persist (tmp+rename) so kill -9 mid-write can no longer truncate the JSON and leak sysfs pins; revertAll/revertNodes now keep failed restores dirty for next-launch repair instead of clearing the snapshot over failed writes
+LINES: +38/-14
+TEST: N (device harness per plan; JVM-untestable Android paths)
+COMPILE: Y (static review; tokenizer-balanced)
+DATE: 2026-08-21
+---
+FILE: app/src/main/java/com/winlator/star/perf/RootManager.kt
+ACTION: MODIFIED
+SUMMARY: Hard 5s bounded wait on every privileged round-trip (writeNode/readNode/runCommand/requestGrant/ensureGrantedBlocking) via daemon guard executor — wedged su can no longer ANR the main thread; grant acquisition made single-flight (grantLock) to stop double superuser prompts from racing startup threads
+LINES: +45/-10
+TEST: N
+COMPILE: Y (static review; 0 unguarded Shell.cmd execs remain)
+DATE: 2026-08-21
+---
+FILE: app/src/main/java/com/winlator/star/perf/TempWatchdog.kt
+ACTION: MODIFIED
+SUMMARY: Extracted pure resolvedCeilingFor(mode, first, top, manual) seam (instance fn delegates); disarming the watchdog while thermal-disable is globally on now force-disables that pin (failsafe-coupling validation)
+LINES: +22/-12
+TEST: Y (TempWatchdogCeilingTest)
+COMPILE: Y (static review)
+DATE: 2026-08-21
+---
+FILE: app/src/main/java/com/winlator/star/perf/PerformanceSettings.kt
+ACTION: MODIFIED
+SUMMARY: Toggle validation: enabling the dangerous thermal-disable global default without an armed TempWatchdog auto-arms the watchdog first
+LINES: +11/-0
+TEST: N
+COMPILE: Y (static review)
+DATE: 2026-08-21
+---
+FILE: app/src/test/java/com/winlator/star/perf/TempWatchdogCeilingTest.kt
+ACTION: CREATED
+SUMMARY: Phase-4 thermal trip test: 13 cases covering trip anchoring per mode, margins (-10/-3), no-trips fallback, ordering invariant (aggressive<top), MANUAL clamps incl. odd tiny-top device
+LINES: +86/-0
+TEST: Y
+COMPILE: Y (static review)
+DATE: 2026-08-21
+---

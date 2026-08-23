@@ -1,6 +1,7 @@
 package com.winlator.star.perf
 
 import android.content.Context
+import android.util.Log
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -24,6 +25,7 @@ import kotlinx.coroutines.flow.asStateFlow
 object PerformanceSettings {
 
     private const val PREFS = "perf_prefs"
+    private const val TAG = "PerformanceSettings"
     private const val KEY_SUSTAINED = "global_sustainedPerfMode"
     private const val KEY_PRIORITY = "global_perfPriorityBoost"
     private const val KEY_BIG_CORES = "global_preferBigCores"
@@ -93,6 +95,13 @@ object PerformanceSettings {
     fun rootDefaultFlow(key: String): StateFlow<Boolean> = flowFor(key)
     fun rootDefaultValue(key: String): Boolean = flowFor(key).value
     fun setRootDefault(key: String, v: Boolean) {
+        // Safety coupling (Phase-4 toggle validation): the DANGEROUS thermal-disable pin may only
+        // go live with the temperature watchdog armed. If the user disabled the watchdog, arm it
+        // alongside instead of letting an unprotected thermal kill switch through.
+        if (key == PerfRootApplier.KEY_THERMAL_DISABLE && v && !TempWatchdog.enabled.value) {
+            Log.w(TAG, "thermal-disable enabled without watchdog -> arming TempWatchdog")
+            TempWatchdog.setWatchdogEnabled(true)
+        }
         flowFor(key).value = v
         appContext?.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             ?.edit()?.putBoolean("global_$key", v)?.apply()

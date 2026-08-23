@@ -110,11 +110,20 @@ object PerfRevertRegistry {
         }
         Log.d(TAG, "reverting ${originals.size} node(s)")
         // Restore in reverse capture order so dependent knobs (e.g. min before max) unwind cleanly.
+        // A failed write (root revoked mid-session, node vanished) KEEPS its entry: the snapshot
+        // stays dirty so the next launch's restore path retries, instead of silently leaking the pin.
+        val failed = LinkedHashMap<String, String>()
         for ((path, value) in originals.entries.reversed()) {
-            RootManager.writeNode(path, value)
+            if (!RootManager.writeNode(path, value)) failed[path] = value
         }
         originals.clear()
-        clearPersisted()
+        if (failed.isEmpty()) {
+            clearPersisted()
+        } else {
+            Log.w(TAG, "revertAll: ${failed.size} node(s) failed to restore; keeping snapshot dirty")
+            originals.putAll(failed)
+            persist()
+        }
     }
 
     /**
@@ -127,10 +136,17 @@ object PerfRevertRegistry {
         val toRevert = paths.filter { originals.containsKey(it) }
         if (toRevert.isEmpty()) return
         // Reverse so co-dependent knobs (min before max) unwind cleanly, same as revertAll.
+        // Failed restores keep their snapshot entry (stays dirty -> retried next launch).
+        val failed = LinkedHashMap<String, String>()
         for (path in toRevert.reversed()) {
-            originals[path]?.let { RootManager.writeNode(path, it) }
-            originals.remove(path)
+            val value = originals[path]
+            if (value != null && RootManager.writeNode(path, value)) {
+                originals.remove(path)
+            } else if (value != null) {
+                failed[path] = value
+            }
         }
+        if (failed.isNotEmpty()) Log.w(TAG, "revertNodes: ${failed.size} restore(s) failed; kept dirty")
         if (originals.isEmpty()) clearPersisted() else persist()
     }
 
@@ -183,7 +199,19 @@ object PerfRevertRegistry {
             val nodes = JSONObject()
             for ((k, v) in originals) nodes.put(k, v)
             val json = JSONObject().put(KEY_DIRTY, true).put(KEY_NODES, nodes)
-            file.writeText(json.toString())
+            // ATOMIC write (tmp + rename): a SIGKILL landing mid-writeText used to leave a truncated
+            // JSON behind; fileLooksDirty() then parse-failed -> false and the snapshot was lost,
+            // leaking whatever sysfs pins were live. rename() within the same directory is atomic on
+            // ext4/f2fs, so the snapshot is either the OLD complete state or the NEW complete state.
+            val tmp = File(file.parentFile, file.name + ".tmp")
+            tmp.writeText(json.toString())
+            if (!tmp.renameTo(file)) {
+                // Rare (Windows-style FS quirks / concurrent reader): fall back to delete+rename.
+                if (file.exists() && !file.delete() || !tmp.renameTo(file)) {
+                    Log.w(TAG, "persist: atomic rename failed; removing tmp to avoid stale snapshots")
+                    tmp.delete()
+                }
+            }
         } catch (t: Throwable) {
             Log.w(TAG, "persist failed", t)
         }

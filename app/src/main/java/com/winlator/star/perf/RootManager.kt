@@ -9,6 +9,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.concurrent.Callable
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 
 /**
  * The ONLY place in the app that invokes `su`. Every privileged sysfs write for the power-user
@@ -30,6 +35,27 @@ object RootManager {
     private const val KEY_GRANTED_ONCE = "root_granted_once"
 
     private var appContext: Context? = null
+
+    // Single-flight grant lock: the silent-reacquire thread (onAppStartup) and the revert registry's
+    // startup-restore thread can both reach Shell.getShell(); without this they race to create the
+    // root shell and can double-fire the superuser prompt on some manager implementations.
+    private val grantLock = Any()
+
+    // Hard per-command ceiling for every privileged round-trip. The libsu builder timeout (10s)
+    // only covers shell CREATION — an individual exec on a wedged su would otherwise block its
+    // caller forever, and drawer toggles invoke these from the main thread (-> ANR). A timed
+    // Future.get bounds the WAIT; the underlying worker may stay stuck on a dead shell, which is
+    // fine: the persistent shell is wedged anyway and the next command reuses/rebuilds it.
+    private const val EXEC_TIMEOUT_MS = 5_000L
+    private val execExecutor: ExecutorService =
+        Executors.newSingleThreadExecutor { r ->
+            Thread(r, "root-exec-guard").apply { isDaemon = true }
+        }
+
+    /** Runs [block] on the guard worker with a hard wait limit; TimeoutException escapes to the
+     *  caller's existing catch(Throwable) so writeNode/readNode/runCommand map it to failure. */
+    private fun <T> execBounded(block: () -> T): T =
+        execExecutor.submit(Callable { block() }).get(EXEC_TIMEOUT_MS, TimeUnit.MILLISECONDS)
 
     enum class RootState {
         /** Not yet probed. */
@@ -108,7 +134,9 @@ object RootManager {
             return@withContext false
         }
         val root = try {
-            Shell.getShell().isRoot // blocking; fires the prompt on first grant
+            synchronized(grantLock) {
+                execBounded { Shell.getShell().isRoot } // blocking; fires the prompt on first grant
+            }
         } catch (t: Throwable) {
             Log.w(TAG, "requestGrant failed", t)
             false
@@ -127,19 +155,24 @@ object RootManager {
      */
     fun ensureGrantedBlocking(): Boolean {
         if (isGranted) return true
-        if (!hasSuBinary()) {
-            _state.value = RootState.UNAVAILABLE
-            return false
+        synchronized(grantLock) {
+            // Re-check: another thread (silent re-acquire / registry restore) may have granted
+            // while we waited on the lock — avoid a second prompt/shell creation.
+            if (isGranted) return true
+            if (!hasSuBinary()) {
+                _state.value = RootState.UNAVAILABLE
+                return false
+            }
+            val root = try {
+                execBounded { Shell.getShell().isRoot }
+            } catch (t: Throwable) {
+                Log.w(TAG, "ensureGrantedBlocking failed", t)
+                false
+            }
+            _state.value = if (root) RootState.GRANTED else RootState.DENIED
+            if (root) setGrantedOnce(true)
+            return root
         }
-        val root = try {
-            Shell.getShell().isRoot
-        } catch (t: Throwable) {
-            Log.w(TAG, "ensureGrantedBlocking failed", t)
-            false
-        }
-        _state.value = if (root) RootState.GRANTED else RootState.DENIED
-        if (root) setGrantedOnce(true)
-        return root
     }
 
     /**
@@ -149,7 +182,7 @@ object RootManager {
     fun readNode(path: String): String? {
         if (!isGranted) return null
         return try {
-            val res = Shell.cmd(PerfCmd.readCmd(path)).exec()
+            val res = execBounded { Shell.cmd(PerfCmd.readCmd(path)).exec() }
             if (res.isSuccess) PerfCmd.normalizeRead(res.out.joinToString("\n")) else null
         } catch (t: Throwable) {
             Log.w(TAG, "readNode($path) failed", t)
@@ -168,7 +201,7 @@ object RootManager {
             return false
         }
         return try {
-            val res = Shell.cmd(PerfCmd.writeCmd(path, value)).exec()
+            val res = execBounded { Shell.cmd(PerfCmd.writeCmd(path, value)).exec() }
             if (!res.isSuccess) Log.w(TAG, "writeNode($path=$value) rc=${res.code} ${res.err}")
             res.isSuccess
         } catch (t: Throwable) {
@@ -191,7 +224,7 @@ object RootManager {
             return false
         }
         return try {
-            val res = Shell.cmd(cmd).exec()
+            val res = execBounded { Shell.cmd(cmd).exec() }
             if (!res.isSuccess) Log.w(TAG, "runCommand($cmd) rc=${res.code} ${res.err}")
             res.isSuccess
         } catch (t: Throwable) {

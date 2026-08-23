@@ -105,6 +105,17 @@ object TempWatchdog {
         _enabled.value = enabled
         appContext?.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             ?.edit()?.putBoolean(KEY_ENABLED, enabled)?.apply()
+        // Safety coupling (Phase-4 toggle validation): the thermal-DISABLE pin must never outlive
+        // its only failsafe. Disarming the watchdog while "thermal disable" is globally on turns
+        // that dangerous pin OFF too (the registry reverts its nodes through the normal path).
+        if (!enabled) {
+            try {
+                if (PerformanceSettings.rootDefaultValue(PerfRootApplier.KEY_THERMAL_DISABLE)) {
+                    Log.w(TAG, "watchdog disarmed while thermal-disable is on -> disabling thermal-disable")
+                    PerformanceSettings.setGlobalDefault(PerfRootApplier.KEY_THERMAL_DISABLE, false)
+                }
+            } catch (t: Throwable) { Log.w(TAG, "thermal-disable coupling check failed", t) }
+        }
         Log.d(TAG, "watchdog ${if (enabled) "armed" else "disarmed"}")
     }
 
@@ -127,16 +138,18 @@ object TempWatchdog {
     }
 
     /** Ceiling a given mode WOULD resolve to on this device (for labels / info copy), no state change. */
-    fun resolvedCeilingFor(mode: ThresholdMode): Int {
-        val first = trips?.firstTripC
-        val top = trips?.topTripC
-        return when (mode) {
-            ThresholdMode.CONSERVATIVE -> first ?: FALLBACK_CEILING_C
-            ThresholdMode.BALANCED -> top?.minus(BALANCED_MARGIN) ?: FALLBACK_CEILING_C
-            ThresholdMode.AGGRESSIVE -> top?.minus(AGGRESSIVE_MARGIN) ?: FALLBACK_CEILING_C
-            ThresholdMode.MANUAL -> _manualCeilingC.value.coerceIn(MANUAL_MIN_C, maxOf(MANUAL_MIN_C, top ?: MANUAL_MAX_C))
+    fun resolvedCeilingFor(mode: ThresholdMode): Int =
+        resolvedCeilingFor(mode, trips?.firstTripC, trips?.topTripC, _manualCeilingC.value)
+
+    /** Pure resolution seam (JVM-testable): mode + device trip anchors + manual value -> ceiling °C.
+     *  Mirrors [resolvedCeilingFor] exactly; no Android types, no object state touched. */
+    internal fun resolvedCeilingFor(mode: ThresholdMode, firstTripC: Int?, topTripC: Int?, manualC: Int): Int =
+        when (mode) {
+            ThresholdMode.CONSERVATIVE -> firstTripC ?: FALLBACK_CEILING_C
+            ThresholdMode.BALANCED -> topTripC?.minus(BALANCED_MARGIN) ?: FALLBACK_CEILING_C
+            ThresholdMode.AGGRESSIVE -> topTripC?.minus(AGGRESSIVE_MARGIN) ?: FALLBACK_CEILING_C
+            ThresholdMode.MANUAL -> manualC.coerceIn(MANUAL_MIN_C, maxOf(MANUAL_MIN_C, topTripC ?: MANUAL_MAX_C))
         }
-    }
 
     private fun recomputeCeiling() { _ceilingC.value = resolvedCeilingFor(_mode.value) }
 
