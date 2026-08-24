@@ -37,7 +37,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.winlator.star.R
 import com.winlator.star.ui.FexMode
-import com.winlator.star.ui.PresentModeSection
 import com.winlator.star.ui.XServerDialogState
 import com.winlator.star.ui.XServerDrawerState
 

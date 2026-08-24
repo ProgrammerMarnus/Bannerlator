@@ -213,3 +213,30 @@ TEST: N
 COMPILE: N (no JDK/Android SDK; brace-balance 283/283 verified; zero cluster leftovers)
 DATE: 2026-08-22
 ---
+
+FILE: app/src/main/java/com/winlator/star/ui/screens/drawer/HudTab.kt
+ACTION: CREATED
+SUMMARY: HUD tab extracted from XServerDrawer.kt (HudContent cluster, programmatic segment move with call-site conversion): entry composable (master toggle, Performance accordion with FPS limiter/presets + refresh-rate Auto/manual, 4-style HUD groups classic/gamehub/gamenative/fusion, element toggles, scale/opacity/outline sliders, temp alerts, diagnostics export) + HudGroupLabel + CollapsibleSection (accordion primitive) + PresentModeSection (kept internal — shared with GraphicsTab & TV) + HudChipRow. Imports auto-generated from token scan incl. Container + parseHudOutline + exportHudDiagnostics.
+LINES: +594/-0
+TEST: N
+COMPILE: N (no JDK/Android SDK; brace-balance 225/225 verified)
+DATE: 2026-08-22
+---
+
+FILE: app/src/main/java/com/winlator/star/ui/XServerDrawer.kt
+ACTION: MODIFIED
+SUMMARY: Removed HUD tab cluster (~535 lines). Dispatch HUD -> HudTab(state); added HudTab import AND PresentModeSection import (TV still calls it cross-package after its move). File 1119 -> 585 lines (4309 at Phase-1 start, -86.4%).
+LINES: +2/-536
+TEST: N
+COMPILE: N (no JDK/Android SDK; brace-balance 58/58 verified; zero HUD leftovers)
+DATE: 2026-08-22
+---
+
+FILE: app/src/main/java/com/winlator/star/ui/screens/drawer/GraphicsTab.kt
+ACTION: MODIFIED
+SUMMARY: Removed now-broken cross-package import com.winlator.star.ui.PresentModeSection - after HUD extraction it lives in this same package (ui.screens.drawer) and resolves directly.
+LINES: +0/-1
+TEST: N
+COMPILE: N (no JDK/Android SDK; brace-balance 79/79 re-verified)
+DATE: 2026-08-22
+---
