@@ -186,3 +186,30 @@ TEST: N
 COMPILE: N (no JDK/Android SDK; brace-balance 394/394 verified; no GraphicsContent/cluster refs remain)
 DATE: 2026-08-22
 ---
+
+FILE: app/src/main/java/com/winlator/star/ui/screens/drawer/ReshadeTab.kt
+ACTION: CREATED
+SUMMARY: ReShade tab extracted from XServerDrawer.kt (ReshadeContent cluster): entry + ReshadeSection (master/live-preview/Solo-Stack loadout editor with per-effect Reset) + ReshadeModeSelector + ReshadeEffectParams (BOOL/COMBO/COLOR/FLOAT-INT typed controls) + ReshadeColorControl (HSV picker) + GradientSlider (+ local PureBlack/ToggleTrackOff literals). ToggleRow/LabeledSlider -> Drawer* variants.
+LINES: +459/-0
+TEST: N
+COMPILE: N (no JDK/Android SDK; brace-balance 100/100 verified)
+DATE: 2026-08-22
+---
+
+FILE: app/src/main/java/com/winlator/star/ui/screens/drawer/DrawerComponents.kt
+ACTION: MODIFIED
+SUMMARY: Added DrawerReshadeDropdown (COMBO dropdown shared by ReShade effect params + TV pickers). Imports added: material.icons.Icons/ArrowDropDown, material3.DropdownMenu/DropdownMenuItem/Icon, screens.MenuItemDivider/outlinedMenuCard. File 806 -> 852 lines.
+LINES: +46/-0
+TEST: N
+COMPILE: N (no JDK/Android SDK; brace-balance 123/123 verified)
+DATE: 2026-08-22
+---
+
+FILE: app/src/main/java/com/winlator/star/ui/XServerDrawer.kt
+ACTION: MODIFIED
+SUMMARY: Removed ReShade tab cluster (~440 lines incl. stale relocated-comment block). Kept thin ReshadeDropdown wrapper for the 3 TV call sites. Dispatch RESHADE -> ReshadeTab(state); added ReshadeTab + DrawerReshadeDropdown imports. File 1552 -> 1119 lines (4309 at Phase-1 start, -74%).
+LINES: +6/-439
+TEST: N
+COMPILE: N (no JDK/Android SDK; brace-balance 283/283 verified; zero cluster leftovers)
+DATE: 2026-08-22
+---

@@ -18,7 +18,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
@@ -50,6 +55,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.winlator.star.R
 import com.winlator.star.ui.XServerDialogState
+import com.winlator.star.ui.screens.MenuItemDivider
+import com.winlator.star.ui.screens.outlinedMenuCard
 import com.winlator.star.ui.theme.LocalAccentDim
 import kotlin.math.roundToInt
 
@@ -800,6 +807,45 @@ internal fun DrawerFgMultiplierButtons(selected: Int, engine: String, onSelect: 
                     fontSize = 13.sp,
                     fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium
                 )
+            }
+        }
+    }
+}
+
+// COMBO/RADIO/LIST dropdown shared by the ReShade effect params and the TV tab pickers — shows the
+// ui_items labels and reports the selected index. Relocated from XServerDrawer.kt.
+@Composable
+internal fun DrawerReshadeDropdown(label: String, options: List<String>, selected: Int, onSelect: (Int) -> Unit) {
+    val accent = MaterialTheme.colorScheme.primary
+    var expanded by remember { mutableStateOf(false) }
+    Column(modifier = Modifier.padding(vertical = 4.dp)) {
+        Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
+        Box {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MaterialTheme.colorScheme.surface)
+                    .clickable { expanded = true }
+                    .padding(horizontal = 12.dp, vertical = 10.dp)
+            ) {
+                Text(
+                    options.getOrElse(selected) { options.firstOrNull() ?: "" },
+                    color = accent, fontWeight = FontWeight.Medium, fontSize = 12.sp,
+                    modifier = Modifier.weight(1f)
+                )
+                Icon(Icons.Default.ArrowDropDown, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+                modifier = Modifier.outlinedMenuCard()
+            ) {
+                options.forEachIndexed { i, opt ->
+                    if (i > 0) MenuItemDivider()
+                    DropdownMenuItem(text = { Text(opt) }, onClick = { onSelect(i); expanded = false })
+                }
             }
         }
     }
